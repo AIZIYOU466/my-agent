@@ -15,7 +15,6 @@ import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -51,13 +50,18 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aicode.R
@@ -112,9 +116,6 @@ private const val SCROLL_TO_BOTTOM_BTN_SIZE = 34
 private const val MESSAGE_ENTRY_STAGGER_MS = 90L
 private const val MESSAGE_ENTRY_MAX_STAGGER_MS = 360L
 
-/** AI 收工后继续逐帧校准的时长（ms）：md 异步解析仍可能改高度，不能一停就收手。 */
-private const val CALIBRATE_TAIL_MS = 1_200L
-
 /** 展开/收起工具卡片后等待 item 高度稳定的最大帧数：diff 渲染、实时输出会分帧长高，
  *  过早读位置会按瞬时高度算出过大的滚动目标（中间位置长卡片展开被滚过头、标题出视口）。 */
 private const val MAX_TOGGLE_SETTLE_FRAMES = 12
@@ -156,7 +157,7 @@ private const val CHUNK_BUDGET_CHARS = 1_200
  * 整表保持完整）、普通段落（以空行分隔），然后按字符预算贪心打包成 chunk。
  * 超预算的单块按行拆分为多个块，宁可打断表格也不让某条 item 无界长高。
  */
-private fun splitLongContent(text: String): List<String> {
+internal fun splitLongContent(text: String): List<String> {
     val lines = text.lines()
     val rawBlocks = ArrayList<String>()
     var i = 0
@@ -164,10 +165,11 @@ private fun splitLongContent(text: String): List<String> {
         val line = lines[i]
         val trimmed = line.trimStart()
         when {
-            trimmed.startsWith("```") -> {
+            trimmed.startsWith("```") || trimmed.startsWith("~~~") -> {
+                val fence = if (trimmed.startsWith("```")) "```" else "~~~"
                 val sb = StringBuilder(line)
                 var j = i + 1
-                while (j < lines.size && !lines[j].trimStart().startsWith("```")) {
+                while (j < lines.size && !lines[j].trimStart().startsWith(fence)) {
                     sb.append('\n').append(lines[j]); j++
                 }
                 if (j < lines.size) {
@@ -189,6 +191,7 @@ private fun splitLongContent(text: String): List<String> {
                 var j = i + 1
                 while (j < lines.size && lines[j].isNotBlank() &&
                     !lines[j].trimStart().startsWith("```") &&
+                    !lines[j].trimStart().startsWith("~~~") &&
                     !lines[j].trimStart().startsWith("|")
                 ) {
                     sb.append('\n').append(lines[j]); j++
@@ -200,9 +203,12 @@ private fun splitLongContent(text: String): List<String> {
     if (rawBlocks.isEmpty()) return listOf(text)
 
     // 超预算单块（如巨型表格/巨型段落）按行切成预算内的小块，兜底保证有界。
+    // 代码块（``` / ~~~）作为不可分割的语法单元必须保持完整，绝不能按行拆碎，
+    // 否则围栏闭合被破坏，后续片段会退化为普通正文、丢失高亮与复制，HTML 更会被预处理器误清洗。
     val blocks = ArrayList<String>()
     for (block in rawBlocks) {
-        if (block.length <= CHUNK_BUDGET_CHARS) {
+        val isCodeBlock = block.trimStart().let { it.startsWith("```") || it.startsWith("~~~") }
+        if (block.length <= CHUNK_BUDGET_CHARS || isCodeBlock) {
             blocks.add(block)
         } else {
             val piece = StringBuilder()
@@ -648,40 +654,43 @@ fun AIChatPanel(
         }
     }
 
-    // 用户开始拖拽：停止跟随。松手时若已到底则恢复跟随（旧逻辑）。
-    // 额外：流式输出时内容持续增长，用户可能松手后又被「顶」离底部——
-    // 用 snapshotFlow { isAtBottom } 持续监测，只要滑到底部就恢复跟随，
-    // 满足「流式中滚到底部自动继续跟随」。
-    LaunchedEffect(listState) {
-        listState.interactionSource.interactions.collect { interaction ->
-            when (interaction) {
-                is DragInteraction.Start -> followBottom = false
-                is DragInteraction.Stop, is DragInteraction.Cancel -> {
-                    // 松手后延迟判定是否恢复跟随：等惯性滚动稳定，
-                    // 避免「松手在底部但惯性上滑」被立即拉回。
-                    scope.launch {
-                        delay(150)
-                        followBottom = isAtBottom
-                    }
-                }
+    // 自动跟随只允许由发送消息、切换会话或回底按钮主动开启；用户一旦开始拖拽/甩动就永久暂停，
+    // 不在 fling 结束时猜测是否恢复。这样自动滚动不会和用户的惯性滚动抢同一个 MutatorMutex。
+    val userScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source == NestedScrollSource.UserInput) followBottom = false
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                followBottom = false
+                return Velocity.Zero
             }
         }
     }
-    LaunchedEffect(listState) {
-        snapshotFlow { isAtBottom }.collect { atBottom ->
-            if (atBottom) followBottom = true
-        }
-    }
 
-    // 贴底定位（发送消息、切换会话）：直接滚到锚点——scrollToItem 的目标 offset 使
-    // 最后一项底部恰好停在悬浮层上方（contentPadding 预留 reserve，滚到该位置即列表
-    // 可滚的最底部，无需依赖动画与逐步对齐）。
+    // 贴底定位（发送消息、切换会话、回底按钮）：只在明确需要时调用一次，
+    // 不再用逐帧校准追着 LazyColumn 滚动。
     val snapToBottom: suspend () -> Unit = {
         val lastIndex = listState.layoutInfo.totalItemsCount - 1
-        if (lastIndex >= 0) {
-            // 滚到列表可滚最底部：scrollToItem 的 offset 会被 clamp 到 maxScroll，
-            // 最后一项底部恰好停在 contentPadding 底部（= 悬浮层上沿预留），无需手算项高度。
-            listState.scrollToItem(lastIndex, Int.MAX_VALUE)
+        if (lastIndex >= 0) listState.scrollToItem(lastIndex, Int.MAX_VALUE)
+    }
+
+    val latestFollowBottom = rememberUpdatedState(followBottom)
+    LaunchedEffect(listState, messagesReady) {
+        if (!messagesReady) return@LaunchedEffect
+        snapshotFlow {
+            Triple(streamingText?.length, streamingReasoning?.length, messages.size)
+        }.collectLatest {
+            // 内容变高、公式图片完成或新消息落库时只补一次到底；用户已经滚动后
+            // followBottom 为 false，任何布局变化都不能再改变其浏览位置。
+            if (latestFollowBottom.value && !listState.isScrollInProgress && !isAtBottom) {
+                withFrameNanos { }
+                if (latestFollowBottom.value && !listState.isScrollInProgress && !isAtBottom) {
+                    snapToBottom()
+                }
+            }
         }
     }
 
@@ -725,69 +734,6 @@ fun AIChatPanel(
             positionedSession = currentSessionId
             followBottom = true
         }
-    }
-
-    // 锚点式常驻校准循环：锚点 = 最后内容底部恰好停在悬浮层（输入框）上沿。
-    // scrollToItem(最后一项, Int.MAX_VALUE) 会被 LazyColumn clamp 到可滚的最底部
-    // （contentPadding 底部预留 reserve 保证），即最后一项底部停在悬浮层上沿，
-    // 数学上任何时刻都成立——消息足够时，最后一条消息永不落入输入框之下，
-    // 且不依赖“最后可见项 == 最后一项”的高度假设（高度跳变时也不会算错目标）。
-    // 每帧检查最后可见项：最后内容被增长推下（底部超安全区）或有内容被推出视口下方
-    // （最后可见项不是最后一项，即跟丢）时，滚回锚点；md 异步解析的高度跳变也会在
-    // 下一帧被检测到，不存在信号与渲染错位。
-    // 只向下校准：内容变矮（流式结束、折叠）时保持当前位置，避免「往回滚」与拉锯。
-    // reserve 经 State 传递：下面这个 lambda 只创建一次，直接捕获局部 Int 会一直用首帧的兜底值。
-    val reservePxState = rememberUpdatedState(inputBarReservePx)
-    val busyState = rememberUpdatedState(isBusy)
-    val calibrateToAnchor: suspend () -> Unit = remember(listState) {
-        {
-            // 无向下滚动空间（内容不满屏或已滚到锚点）：最后内容必然在安全区上方，无需校准。
-            if (followBottom && listState.canScrollForward) {
-                val layout = listState.layoutInfo
-                val lastIndex = layout.totalItemsCount - 1
-                if (lastIndex >= 0) {
-                    val lastVisible = layout.visibleItemsInfo.lastOrNull()
-                    val safeBottom = layout.viewportEndOffset - reservePxState.value
-                    // 最后一项被推出视口下方（跟丢）或最后内容底部越过安全区：滚回锚点。
-                    // 用户在别处浏览时 followBottom 已为 false，不会走到这里。
-                    val lost = lastVisible == null || lastVisible.index < lastIndex
-                    val pushedDown = lastVisible != null &&
-                        lastVisible.offset + lastVisible.size > safeBottom + AUTO_SCROLL_TOLERANCE_PX
-                    if (lost || pushedDown) listState.scrollToItem(lastIndex, Int.MAX_VALUE)
-                }
-            }
-        }
-    }
-
-    // 只在「跟随中且内容可能还在动」时逐帧校准。原来是无条件 while(true)，followBottom
-    // 为 false 也只 continue、帧回调照旧注册，等于让主线程全程每帧醒一次（空闲也在耗电）。
-    LaunchedEffect(listState, messagesReady) {
-        if (!messagesReady) return@LaunchedEffect
-        snapshotFlow { followBottom && (busyState.value || listState.isScrollInProgress) }
-            .collectLatest { active ->
-                if (active) {
-                    while (true) {
-                        withFrameNanos { }
-                        calibrateToAnchor()
-                    }
-                } else {
-                    // 收工那一刻内容未必已稳定（md 异步解析往往落在后面），再兜一小段再收手。
-                    val deadline = System.nanoTime() + CALIBRATE_TAIL_MS * 1_000_000L
-                    while (System.nanoTime() < deadline) {
-                        withFrameNanos { }
-                        calibrateToAnchor()
-                    }
-                }
-            }
-    }
-
-    // 内容变化信号旁路：文本/思考/消息条数变化时立即校准一次，不等下一帧——
-    // 与常驻校准循环互为补充，覆盖「无动画帧」的间隙，杜绝跟丢窗口。
-    LaunchedEffect(listState, messagesReady) {
-        if (!messagesReady) return@LaunchedEffect
-        snapshotFlow {
-            Triple(streamingText?.length, streamingReasoning?.length, messages.size)
-        }.collect { calibrateToAnchor() }
     }
 
     val firstVisibleItemIndex by remember { derivedStateOf { listState.firstVisibleItemIndex } }
@@ -862,7 +808,11 @@ fun AIChatPanel(
         ) {
             // 内容层：消息列表延伸到屏幕底部，输入框悬浮其上，滚动时卡片可滑入输入框后面
             Column(modifier = Modifier.fillMaxSize()) {
-            Box(modifier = Modifier.weight(1f)) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .nestedScroll(userScrollConnection)
+            ) {
                 if (!messagesReady) {
                     // 远程模式连接未就绪时显示连接状态占位，避免空白或旧工作区记录闪烁
                     if (isRemote && connectionState != null && connectionState != com.aicode.feature.agent.domain.container.ConnectionState.CONNECTED) {
