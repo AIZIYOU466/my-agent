@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Base64
+import android.view.ContextThemeWrapper
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -24,6 +25,7 @@ import android.webkit.WebViewClient
 import android.widget.FrameLayout
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewFeature
+import com.aicode.R
 import com.aicode.core.util.FileLogger
 import com.aicode.feature.agent.domain.model.AgentImage
 import com.aicode.feature.workspace.domain.FileAccessProvider
@@ -119,16 +121,16 @@ class BrowserManager @Inject constructor(
         private const val NIGHT_STYLE_ID = "__bicode_night_css__"
         private val NIGHT_BG_COLOR = 0xFF121212.toInt()
 
-        /** 反色夜间样式：整页 invert + hue-rotate，图片/视频二次反色还原原始观感。 */
+        /** 夜间压暗样式：页面顶层盖一层半透明黑色蒙版，保留原色、只降低亮度（不改色相、不影响 fixed 布局）。 */
         private const val NIGHT_CSS =
-            "html{filter:invert(1) hue-rotate(180deg);background:#fff}" +
-                "img,video,picture,canvas,svg image,[style*=\"background-image\"]" +
-                "{filter:invert(1) hue-rotate(180deg)}"
+            "html::after{content:'';position:fixed;top:0;left:0;right:0;bottom:0;" +
+                "pointer-events:none;z-index:2147483647;background:rgba(0,0,0,0.2)}"
     }
 
     private class TabHolder(
         val id: String,
         val webView: WebView,
+        val themedContext: ContextThemeWrapper,
         var url: String = "",
         var title: String = "",
         var loading: Boolean = false,
@@ -399,9 +401,11 @@ class BrowserManager @Inject constructor(
     }
 
     private fun createTabInternal(id: String, initialUrl: String?): TabHolder {
-        val wv = WebView(appContext)
+        // WebView 依据其上下文主题的 isLightTheme 向网页报告 prefers-color-scheme，必须用专用主题构建
+        val themedContext = ContextThemeWrapper(appContext, webViewThemeRes(nightMode))
+        val wv = WebView(themedContext)
         configureWebView(wv, id)
-        val tab = TabHolder(id = id, webView = wv)
+        val tab = TabHolder(id = id, webView = wv, themedContext = themedContext)
         tabs.add(tab)
         activeTabId = id
 
@@ -449,6 +453,8 @@ class BrowserManager @Inject constructor(
     private fun applyNightMode() {
         val night = nightMode
         tabs.forEach { tab ->
+            // 先更新主题，让随后的 settings 变更触发 WebView 重读 prefers-color-scheme
+            tab.themedContext.setTheme(webViewThemeRes(night))
             tab.webView.setBackgroundColor(if (night) NIGHT_BG_COLOR else Color.WHITE)
             applyDarkThemeToSettings(tab.webView)
             applyNightModeTo(tab.webView)
@@ -456,30 +462,30 @@ class BrowserManager @Inject constructor(
         publishState()
     }
 
-    /** 适配内核级暗色模式（开启 prefers-color-scheme: dark 支持）。 */
+    /** WebView 主题：isLightTheme 决定网页看到的 prefers-color-scheme（见 values/styles.xml）。 */
+    private fun webViewThemeRes(night: Boolean): Int =
+        if (night) R.style.Theme_AICode_WebView_Dark else R.style.Theme_AICode_WebView
+
+    /**
+     * 内核级暗色设置。prefers-color-scheme 实际由 WebView 主题的 isLightTheme 决定（见 [webViewThemeRes]），
+     * 这里设置算法调暗并借此触发 WebView 重读偏好——夜间模式切换后需要一次 settings 变更才会下发新偏好。
+     */
     private fun applyDarkThemeToSettings(wv: WebView) {
-        val night = nightMode
         try {
             if (WebViewFeature.isFeatureSupported(WebViewFeature.ALGORITHMIC_DARKENING)) {
-                WebSettingsCompat.setAlgorithmicDarkeningAllowed(wv.settings, night)
+                // 保持原色，不做内核算法调暗；此处借该开关的值变化触发 WebView 重读偏好——
+                // 夜间模式切换后必须有一次 settings 变更，新的 prefers-color-scheme 才会下发到渲染进程。
+                WebSettingsCompat.setAlgorithmicDarkeningAllowed(wv.settings, true)
+                WebSettingsCompat.setAlgorithmicDarkeningAllowed(wv.settings, false)
             } else if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK)) {
-                WebSettingsCompat.setForceDark(
-                    wv.settings,
-                    if (night) WebSettingsCompat.FORCE_DARK_ON else WebSettingsCompat.FORCE_DARK_OFF
-                )
-                if (WebViewFeature.isFeatureSupported(WebViewFeature.FORCE_DARK_STRATEGY)) {
-                    WebSettingsCompat.setForceDarkStrategy(
-                        wv.settings,
-                        WebSettingsCompat.DARK_STRATEGY_PREFER_WEB_THEME_OVER_USER_AGENT_DARKENING
-                    )
-                }
+                WebSettingsCompat.setForceDark(wv.settings, WebSettingsCompat.FORCE_DARK_OFF)
             }
         } catch (e: Throwable) {
             FileLogger.w(TAG, "Failed to apply dark theme to WebSettings", e)
         }
     }
 
-    /** 注入或移除夜间样式。带原生深色主题保护（对已支持深色的 GitHub 等网站避免反相破坏）。 */
+    /** 注入或移除夜间压暗蒙版。对已支持原生深色的页面（背景为深色）不压暗。 */
     private fun applyNightModeTo(wv: WebView) {
         val js = if (nightMode) {
             """
