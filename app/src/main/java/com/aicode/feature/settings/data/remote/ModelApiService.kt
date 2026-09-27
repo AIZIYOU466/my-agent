@@ -62,11 +62,14 @@ class ModelApiService @Inject constructor(
         userAgent: String = ""
     ): Result<FetchModelsResult> = withContext(Dispatchers.IO) {
         val start = System.nanoTime()
+        var capturedUrl = ""
+        var capturedHeaders: Map<String, String> = emptyMap()
         runCatching {
             if (apiKey.isBlank()) error("请先填写 API Key")
 
             val modelsPath = if (type == ProviderType.GEMINI) "v1beta/models" else "v1/models"
             val url = if (useFullUrl) baseUrl else joinUrl(baseUrl, modelsPath)
+            capturedUrl = url
             val request = Request.Builder()
                 .url(url)
                 .applyAuth(apiKey, type)
@@ -82,6 +85,7 @@ class ModelApiService @Inject constructor(
                     raw
                 }
             }
+            capturedHeaders = reqHeadersMap
 
             client.newCall(request).execute().use { response ->
                 val latency = (System.nanoTime() - start) / 1_000_000
@@ -154,6 +158,8 @@ class ModelApiService @Inject constructor(
                 success = false,
                 latencyMs = latency,
                 message = e.message ?: "拉取失败",
+                requestUrl = capturedUrl,
+                requestHeaders = capturedHeaders,
                 errorDetail = e.stackTraceToString()
             )
             throw FetchModelsException(e.message ?: "拉取失败", debug)
