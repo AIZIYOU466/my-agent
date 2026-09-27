@@ -71,6 +71,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.aicode.R
 import com.aicode.core.theme.Spacing
+import com.aicode.core.util.FileLogger
 import com.aicode.feature.agent.domain.tool.browser.BrowserManager
 import com.aicode.feature.agent.domain.tool.browser.BrowserTabState
 import compose.icons.FeatherIcons
@@ -84,7 +85,27 @@ import compose.icons.feathericons.Plus
 import compose.icons.feathericons.RefreshCw
 import compose.icons.feathericons.Sun
 import compose.icons.feathericons.X
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+
+private const val TAG = "BrowserScreen"
+
+/**
+ * 界面触发的浏览器操作统一走此兜底：navigate/reload/newTab 等在加载失败时会抛出异常，
+ * 未捕获会直接让 UI 协程崩溃。失败信息已由 BrowserManager 写入 tab.error 展示给用户，这里仅记录日志。
+ */
+private fun CoroutineScope.launchBrowserOp(block: suspend () -> Unit) {
+    launch {
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            FileLogger.e(TAG, "浏览器界面操作失败", e)
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,11 +147,11 @@ fun BrowserScreen(
                 onEditingChange = { isEditingAddress = it },
                 embedded = embedded,
                 onNavigateBack = onNavigateBack,
-                onReload = { scope.launch { browserManager.reload() } },
-                onToggleDevTools = { scope.launch { browserManager.toggleDevTools() } },
+                onReload = { scope.launchBrowserOp { browserManager.reload() } },
+                onToggleDevTools = { scope.launchBrowserOp { browserManager.toggleDevTools() } },
                 onNavigate = { url ->
                     isEditingAddress = false
-                    scope.launch { browserManager.navigate(url) }
+                    scope.launchBrowserOp { browserManager.navigate(url) }
                 }
             )
         },
@@ -141,9 +162,9 @@ fun BrowserScreen(
                 tabsCount = state.tabs.size,
                 nightMode = state.nightMode,
                 embedded = embedded,
-                onGoBack = { scope.launch { browserManager.goBack() } },
-                onGoForward = { scope.launch { browserManager.goForward() } },
-                onNewTab = { scope.launch { browserManager.newTab() } },
+                onGoBack = { scope.launchBrowserOp { browserManager.goBack() } },
+                onGoForward = { scope.launchBrowserOp { browserManager.goForward() } },
+                onNewTab = { scope.launchBrowserOp { browserManager.newTab() } },
                 onToggleNightMode = { browserManager.toggleNightMode() },
                 onOpenTabs = { showTabsSheet = true }
             )
@@ -195,7 +216,7 @@ fun BrowserScreen(
                             style = MaterialTheme.typography.bodyMedium
                         )
                         Spacer(Modifier.height(Spacing.sm))
-                        IconButton(onClick = { scope.launch { browserManager.reload() } }) {
+                        IconButton(onClick = { scope.launchBrowserOp { browserManager.reload() } }) {
                             Icon(
                                 FeatherIcons.RefreshCw,
                                 contentDescription = stringResource(R.string.browser_reload),
@@ -263,7 +284,7 @@ fun BrowserScreen(
                     )
                     IconButton(
                         onClick = {
-                            scope.launch {
+                            scope.launchBrowserOp {
                                 browserManager.newTab()
                                 showTabsSheet = false
                             }
@@ -286,13 +307,13 @@ fun BrowserScreen(
                             tab = tab,
                             selected = tab.id == state.activeTabId,
                             onClick = {
-                                scope.launch {
+                                scope.launchBrowserOp {
                                     browserManager.selectTab(tab.id)
                                     showTabsSheet = false
                                 }
                             },
                             onClose = {
-                                scope.launch {
+                                scope.launchBrowserOp {
                                     browserManager.closeTab(tab.id)
                                 }
                             }
