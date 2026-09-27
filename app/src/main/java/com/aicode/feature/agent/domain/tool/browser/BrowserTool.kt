@@ -47,14 +47,14 @@ class BrowserTool @Inject constructor(
     private val actionSchema: Map<String, Any> = mapOf(
         "type" to "string",
         "enum" to actionEnum,
-        "description" to "操作类型。navigate=导航URL(支持 http(s)/file:// 与容器路径); evaluate=执行JS(支持 Promise); click/fill/hover/press=交互(兼容 React); select=下拉选择; getText/getHtml=提取内容; getBackbone=无障碍树(role/name/ref); screenshot=截图; console=控制台日志; wait=等待条件; scroll=滚动; dialog=处理confirm/prompt; back/forward/reload=导航控制; newTab/closeTab/selectTab/listTabs=标签页管理"
+        "description" to "操作类型。navigate=导航URL(支持 http(s)/file:// 与容器路径，非网址输入按搜索关键词处理); evaluate=执行JS(支持 Promise); click/fill/hover/press=交互(兼容 React); select=下拉选择; getText/getHtml=提取内容; getBackbone=无障碍树(role/name/ref); screenshot=截图; console=控制台日志; wait=等待条件; scroll=滚动; dialog=处理confirm/prompt; back/forward/reload=导航控制; newTab/closeTab/selectTab/listTabs=标签页管理"
     )
 
     override val parameters = mapOf(
         "action" to ToolParameter("action", ParameterType.STRING, "操作类型，见 enum列表", true),
         "tabId" to ToolParameter("tabId", ParameterType.STRING, "目标标签页 ID（如 tab-1），缺省时作用于当前激活的标签页", false),
         "path" to ToolParameter("path", ParameterType.STRING, "screenshot: 截图保存路径（可选，缺省默认保存在 ~/workspace/.aicode/browser-screenshots/）", false),
-        "url" to ToolParameter("url", ParameterType.STRING, "navigate/newTab: URL。支持 http(s)；本地文件支持 file:// 或容器路径（~/workspace/…、/etc/…）；无协议头时优先 https，失败回退 http", false),
+        "url" to ToolParameter("url", ParameterType.STRING, "navigate/newTab: URL。支持 http(s)；本地文件支持 file:// 或容器路径（~/workspace/…、/etc/…）；无协议头时优先 https，失败回退 http；不像网址的输入则用内置搜索引擎（Bing）搜索", false),
         "script" to ToolParameter("script", ParameterType.STRING, "evaluate: JS 代码（支持 Promise/async）", false),
         "selector" to ToolParameter("selector", ParameterType.STRING,
             "click/fill/hover/getText/getHtml/scroll/wait: 选择器。支持 ref=e22（getBackbone 返回的引用）/ text=登录 / text*=登录 / role=button[name=\"登录\"] / xpath=//a / CSS", false),

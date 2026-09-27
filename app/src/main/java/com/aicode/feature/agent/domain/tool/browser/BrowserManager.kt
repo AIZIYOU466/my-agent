@@ -113,6 +113,9 @@ class BrowserManager @Inject constructor(
         private const val DIALOG_TIMEOUT_MS = 30_000L
         const val MAX_TABS = 10
 
+        /** 地址栏输入不像网址时，作为关键词交给该搜索引擎（Bing）。 */
+        private const val SEARCH_ENGINE_URL = "https://www.bing.com/search?q="
+
         private const val NIGHT_STYLE_ID = "__bicode_night_css__"
         private val NIGHT_BG_COLOR = 0xFF121212.toInt()
 
@@ -777,7 +780,10 @@ class BrowserManager @Inject constructor(
             target.startsWith("http://") || target.startsWith("https://") -> target
             // 本地文件：file:// 或裸容器路径，映射为宿主真实文件后再交给 WebView
             isLocalPathInput(target) -> withContext(Dispatchers.IO) { resolveLocalFileUrl(target) }
-            else -> null
+            // 无协议头的裸域名：先试 https，SSL/连接失败再回退 http
+            looksLikeHost(target) -> null
+            // 其余视为搜索关键词，交给内置搜索引擎
+            else -> SEARCH_ENGINE_URL + Uri.encode(target)
         }
         return withContext(Dispatchers.Main) {
             val tab = resolveTab(tabId)
@@ -794,6 +800,20 @@ class BrowserManager @Inject constructor(
                 }
             }
         }
+    }
+
+    /**
+     * 判断无协议头输入是否为裸主机（→ 当网址处理），否则视为搜索关键词。
+     * 含空白一律当搜索词；IPv6 字面量（方括号包裹或含多个冒号）、主机部分含 `.` 或为 `localhost` 时当主机。
+     */
+    private fun looksLikeHost(target: String): Boolean {
+        if (target.any { it.isWhitespace() }) return false
+        // IPv6 字面量：带方括号，或主机部分含多个冒号（如 ::1、fe80::1）
+        if (target.startsWith("[")) return true
+        val hostPort = target.substringBefore('/')
+        if (hostPort.count { it == ':' } >= 2) return true
+        val host = hostPort.substringBefore('?').substringBefore('#').substringBefore(':')
+        return host == "localhost" || host.contains('.')
     }
 
     /** 输入是否为本地文件路径：`file://`，或以 `/`、`~`、`./`、`../` 开头的裸路径。 */
