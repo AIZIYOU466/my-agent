@@ -248,8 +248,10 @@ class StatefulAgentWorkflow @Inject constructor(
         val history = messagePersistenceUseCase.buildHistory(sessionId, "__manual_compress__")
         if (history.size <= 2) return false
         val compactionProvider = resolveCompactionFallbackProvider(sessionId) ?: provider
-        val compacted = contextCompactor.compactIfNeeded(history, compactionProvider, sessionId, force = true, onEvent = onEvent)
-        return compacted.size != history.size
+        // 摘要仍用专用压缩模型（尊重用户选择），但保留最近消息的窗口预算按主聊天模型算，
+        // 与自动压缩一致——否则小窗口的压缩模型会让手动压缩保留的最近上下文偏少。
+        val result = contextCompactor.compactIfNeeded(history, compactionProvider, sessionId, force = true, windowProvider = provider, onEvent = onEvent)
+        return result.compacted
     }
 
     /**
@@ -504,12 +506,13 @@ class StatefulAgentWorkflow @Inject constructor(
                         var compactedMessages = state.messages
                         if (!compactionAttemptFailed) {
                             val sessionLastInputTokens = currentContext.sessionId?.let { sessionUseCase.getSessionById(it)?.lastInputTokens } ?: 0
-                            compactedMessages = contextCompactor.compactIfNeeded(state.messages, compactionProvider, context.sessionId, lastInputTokens = sessionLastInputTokens, windowProvider = aiProvider) { event ->
+                            val compaction = contextCompactor.compactIfNeeded(state.messages, compactionProvider, context.sessionId, lastInputTokens = sessionLastInputTokens, windowProvider = aiProvider) { event ->
                                 if (event is AgentEvent.CompactionFailed) compactionAttemptFailed = true
                                 send(event)
                             }
-                            if (compactedMessages !== state.messages) {
-                                state = state.copy(messages = compactedMessages)
+                            compactedMessages = compaction.messages
+                            if (compaction.compacted) {
+                                state = state.copy(messages = compaction.messages)
                             }
                         }
 

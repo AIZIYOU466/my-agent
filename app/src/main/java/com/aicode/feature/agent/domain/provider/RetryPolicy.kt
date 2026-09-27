@@ -125,7 +125,8 @@ class StreamApiException(
 ) : Exception(message.ifBlank { code ?: "stream error" })
 
 // 对齐 Codex CLI is_retryable()：这些错误码明确不可重试。
-// 限流与额度类在此列，是因为它们应直接交给多 Key 自动切换，而不是在同一 Key 上退避重试。
+// 限流类（rate_limit_*）在此列，是让它们优先走多 Key 自动切换；单 Key 无候选时由调用方按限流退避重试。
+// 额度类（quota_exceeded / insufficient_quota / usage_* 等）不是瞬时限流，重试无益，保持不可重试。
 private val NON_RETRYABLE_STREAM_CODES = setOf(
     "cyber_policy",
     "invalid_request_error",
@@ -146,7 +147,7 @@ private val NON_RETRYABLE_STREAM_CODES = setOf(
  *
  * 除传统的 IOException 判定外，还支持 HTTP 状态码感知：
  * - 408（请求超时）、5xx（500/502/503/504 等）→ 可重试（服务端瞬时故障）
- * - 429（限流）→ 不重试，交给多 Key 自动切换（换 Key 比等待更有效）
+ * - 429（限流）→ 不走这里，交给多 Key 自动切换；无 Key 可切时由调用方按限流退避重试（见 [isRateLimitError]）
  * - 其他 4xx → 不重试（客户端错误，重试无意义）
  */
 fun isRetriableNetworkError(t: Throwable): Boolean {
@@ -171,6 +172,44 @@ fun isRetriableNetworkError(t: Throwable): Boolean {
 
     val message = t.message?.lowercase() ?: t.toString().lowercase()
     return TRANSIENT_MESSAGES.any { message.contains(it) }
+}
+
+/** 流内限流错误码（对齐各 provider 的 SSE error.code）。 */
+private val RATE_LIMIT_STREAM_CODES = setOf(
+    "rate_limit_exceeded",
+    "rate_limit_error",
+    "too_many_requests"
+)
+
+/** 限流错误文案兜底：HttpException 被 enrich 包成 IllegalStateException 后只能靠消息文本识别。 */
+private val RATE_LIMIT_MESSAGES = listOf(
+    "rate limit",
+    "too many requests",
+    "http 429"
+)
+
+/** 沿 cause 链查找的最大深度，与 [isKeySwitchFailure] 保持一致。 */
+private const val MAX_CAUSE_DEPTH = 5
+
+/**
+ * 判断失败是否为限流类错误（HTTP 429 / 流内 rate_limit_* / 服务端限流文案）。
+ *
+ * 429 归多 Key 自动切换处理，故 [isRetriableNetworkError] 对它返回 false；但当没有可切换的
+ * Key（单 Key）且尚未吐字时，退避重试才是正确处理——429 是瞬时限流，常带 Retry-After。
+ */
+fun isRateLimitError(t: Throwable): Boolean {
+    var current: Throwable? = t
+    var depth = 0
+    while (current != null && depth < MAX_CAUSE_DEPTH) {
+        when (current) {
+            is HttpException -> if (current.code() == 429) return true
+            is StreamApiException -> if (current.code?.lowercase() in RATE_LIMIT_STREAM_CODES) return true
+        }
+        current = current.cause
+        depth++
+    }
+    val message = t.message?.lowercase() ?: return false
+    return RATE_LIMIT_MESSAGES.any { message.contains(it) }
 }
 
 /** 重试错误的用户可见类别，用于 UI 展示具体原因（而非笼统的「网络波动」）。 */
@@ -303,7 +342,8 @@ private const val MAX_RETRY_AFTER_MILLIS = 60_000L
  *
  * @param onKeyFailure 多 Key 切换回调：在判定为「不可重试」的失败时先调用，入参为
  *        (触发失败, 是否允许重发)。返回 true 表示调用方已切 Key、可重置重试计数并重发；
- *        返回 false 则抛出原异常。网络类失败（408/5xx/超时等）不会触发该回调。
+ *        返回 false 时，限流类失败（429 / rate_limit_*）会退避重试，其余抛出原异常。
+ *        网络类失败（408/5xx/超时等）不会触发该回调。
  * @param onRetry 重试前回调，参数为 (当前重试次数, 最大重试次数)；用于通知上层"正在重试"。
  *                置于 [block] 之前以保证 `retryStaircase { ... }` 的 trailing lambda 仍绑定到 [block]。
  * @param maxRetries 最大重试次数（不含首次请求），由调用方按「偏好设置 → 网络」传入；0 表示不重试。
@@ -327,7 +367,8 @@ suspend fun <T> retryStaircase(
                     attempt = 0
                     continue
                 }
-                throw e
+                // 无 Key 可切（单 Key）时的限流退避重试：429 是瞬时限流，等待后重试优于直接失败
+                if (!isRateLimitError(e)) throw e
             }
             if (attempt >= maxRetries) throw e
             val wait = retryDelayMillis(attempt, e)
@@ -345,6 +386,7 @@ suspend fun <T> retryStaircase(
  * @param onKeyFailure 多 Key 切换回调：在判定为「不可重试」的失败时先调用，入参为
  *        (触发失败, 是否允许重发)。仅当本次尝试尚未收到任何内容时才会传入允许重发；
  *        已吐字时仍可能切换（供后续请求用新 Key）但不会重发，避免用户看到重复内容。
+ *        返回 false 时，尚未吐字的限流类失败会退避重试，其余抛出原异常。
  * @param onRetry 重试前回调，参数为 (当前重试次数, 最大重试次数)；用于通知上层"正在重试"。
  *                回调在 delay 之前调用，确保 UI 能立即展示重试状态。声明为 suspend 以便
  *                调用方在其中通过 Flow 的 emit() 推送重试事件。
@@ -376,7 +418,8 @@ suspend fun streamWithStaircaseRetry(
                     attempt = 0
                     continue
                 }
-                throw e
+                // 限流且尚未吐字、又无 Key 可切（单 Key）→ 退避重试；已吐字不重发，保持原行为
+                if (!(isRateLimitError(e) && !receivedContent)) throw e
             }
             if (attempt >= maxRetries) throw e
             val wait = retryDelayMillis(attempt, e)
