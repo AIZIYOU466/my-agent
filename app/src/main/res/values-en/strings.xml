@@ -560,6 +560,9 @@
     <string name="chat_input_fullscreen_title">Full-screen input</string>
     <string name="chat_queue_title">Queue (%1$d)</string>
     <string name="chat_queue_remove">Remove from queue</string>
+    <string name="chat_queue_edit">Edit queued message</string>
+    <string name="chat_queue_interject">Insert to AI now</string>
+    <string name="chat_queue_drag">Drag to reorder</string>
     <string name="chat_upload_file">Upload File</string>
     <string name="chat_upload_image">Upload Image</string>
     <string name="chat_remove_attachment">Remove attachment</string>    <string name="chat_no_models_hint">No models available, add one in "AI Vendors"</string>

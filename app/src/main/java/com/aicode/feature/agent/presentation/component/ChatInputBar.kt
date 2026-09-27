@@ -161,6 +161,9 @@ internal fun ChatInputBar(
     slashCommands: List<SlashCommand> = emptyList(),
     queuedRequests: List<QueuedRequest> = emptyList(),
     onRemoveQueued: (String) -> Unit = {},
+    onMoveQueued: (Int, Int) -> Unit = { _, _ -> },
+    onEditQueued: (QueuedRequest) -> Unit = {},
+    onInterjectQueued: (String) -> Unit = {},
     tokenProgress: Float = 0f,
     dashboardState: ProviderDashboardState = ProviderDashboardState.Idle,
     onRefreshDashboard: () -> Unit = {},
@@ -321,7 +324,12 @@ internal fun ChatInputBar(
             if (queuedRequests.isNotEmpty()) {
                 QueuedRequestPanel(
                     queuedRequests = queuedRequests,
-                    onRemoveQueued = onRemoveQueued
+                    sessionId = sessionId,
+                    forceCollapse = forceCollapseDashboard,
+                    onRemoveQueued = onRemoveQueued,
+                    onMoveQueued = onMoveQueued,
+                    onEditQueued = onEditQueued,
+                    onInterjectQueued = onInterjectQueued
                 )
             }
 

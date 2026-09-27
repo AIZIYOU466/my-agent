@@ -1272,6 +1272,63 @@ class AIAgentViewModel @Inject constructor(
         _queuedRequests.value = _queuedRequests.value + (sid to queue.filterNot { it.id == id })
     }
 
+    /** 调整当前会话队列条目的顺序（队列面板拖拽排序）。 */
+    fun moveQueuedRequest(fromIndex: Int, toIndex: Int) {
+        val sid = _currentSessionId.value ?: return
+        val queue = _queuedRequests.value[sid] ?: return
+        if (fromIndex !in queue.indices || toIndex !in queue.indices || fromIndex == toIndex) return
+        val reordered = queue.toMutableList().apply { add(toIndex, removeAt(fromIndex)) }
+        _queuedRequests.value = _queuedRequests.value + (sid to reordered)
+    }
+
+    /** 编辑当前会话队列条目的文本（队列面板编辑）。 */
+    fun updateQueuedRequest(id: String, newText: String) {
+        val text = newText.trim()
+        if (text.isEmpty()) return
+        val sid = _currentSessionId.value ?: return
+        val queue = _queuedRequests.value[sid] ?: return
+        _queuedRequests.value = _queuedRequests.value + (sid to queue.map { req ->
+            if (req.id != id) req
+            else req.copy(request = text, modelRequest = syncQueuedModelRequest(req, text))
+        })
+    }
+
+    /**
+     * 用编辑后的文本重建 modelRequest：无附件注入时与 request 同步；有附件注入时
+     * （拼成 `request + "\n\n" + 附件清单`）只替换文本前缀、保留附件部分。
+     */
+    private fun syncQueuedModelRequest(req: QueuedRequest, newText: String): String {
+        if (req.modelRequest == req.request) return newText
+        val prefix = req.request.trimEnd()
+        return if (req.modelRequest.startsWith(prefix)) {
+            newText.trimEnd() + req.modelRequest.removePrefix(prefix)
+        } else {
+            newText
+        }
+    }
+
+    /**
+     * 把当前会话队列中某条消息立即插入正在运行的轮次：从队列移除，转成用户插话通知交给
+     * [deliverSystemEvent]——忙碌时搭车注入本批工具结果，AI 当前轮即可感知；空闲时作为
+     * 新一轮用户消息发送。
+     */
+    fun interjectQueuedRequest(id: String) {
+        val sid = _currentSessionId.value ?: return
+        val queue = _queuedRequests.value[sid] ?: return
+        val req = queue.firstOrNull { it.id == id } ?: return
+        _queuedRequests.value = _queuedRequests.value + (sid to queue.filterNot { it.id == id })
+        deliverSystemEvent(
+            sid,
+            PendingNotification(
+                kind = AgentNotificationKind.USER_MESSAGE,
+                sourceId = sid,
+                title = "",
+                outcome = NotificationOutcome.COMPLETED,
+                message = req.request
+            )
+        )
+    }
+
     private fun processNextInQueue(sessionId: String) {
         // 已有活跃 job（可能是本次收尾前由通知合并/flush 等入口启动的）时不消费，
         // 避免队列被多个收尾入口重复消费、同一会话并发跑两个 job。

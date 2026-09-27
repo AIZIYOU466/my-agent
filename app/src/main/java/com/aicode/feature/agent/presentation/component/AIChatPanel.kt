@@ -80,6 +80,7 @@ import com.aicode.feature.agent.presentation.AgentUIMessage
 import com.aicode.feature.agent.presentation.AgentUIState
 import com.aicode.feature.agent.presentation.AIAgentViewModel
 import com.aicode.feature.agent.presentation.MessageRole
+import com.aicode.feature.agent.presentation.QueuedRequest
 import com.aicode.feature.agent.presentation.hasVisibleContent
 import com.aicode.feature.onboarding.domain.OnboardingStep
 import com.aicode.feature.onboarding.presentation.onboardingTarget
@@ -499,6 +500,7 @@ fun AIChatPanel(
     var uploadingCount by remember { mutableStateOf(0) }
     var messageForMenu by remember { mutableStateOf<AgentUIMessage?>(null) }
     var editingMessage by remember { mutableStateOf<AgentUIMessage?>(null) }
+    var queuedEditing by remember { mutableStateOf<QueuedRequest?>(null) }
     val listState = rememberLazyListState()
     // 消息未就绪时的加载提示：本地读库通常几十毫秒，立刻显示反而闪一下，等一小会儿还没就绪才提示。
     var showMessagesLoading by remember(currentSessionId) { mutableStateOf(false) }
@@ -1299,6 +1301,9 @@ fun AIChatPanel(
                 slashCommands = slashCommands,
                 queuedRequests = queuedRequests,
                 onRemoveQueued = { viewModel.removeQueuedRequest(it) },
+                onMoveQueued = { from, to -> viewModel.moveQueuedRequest(from, to) },
+                onEditQueued = { queuedEditing = it },
+                onInterjectQueued = { viewModel.interjectQueuedRequest(it) },
                 dashboardState = currentDashboardState,
                 todoItems = currentTodoItems,
                 sessionId = currentSessionId.orEmpty(),
@@ -1422,6 +1427,17 @@ fun AIChatPanel(
                     onConfirm = { newContent ->
                         viewModel.updateMessageContent(message.id, newContent)
                         editingMessage = null
+                    }
+                )
+            }
+
+            queuedEditing?.let { req ->
+                EditMessageDialog(
+                    initialText = req.request,
+                    onDismiss = { queuedEditing = null },
+                    onConfirm = { newContent ->
+                        viewModel.updateQueuedRequest(req.id, newContent)
+                        queuedEditing = null
                     }
                 )
             }
