@@ -98,6 +98,7 @@ fun TerminalScreen(
     val tabs by viewModel.tabs.collectAsStateWithLifecycle()
     val activeTabId by viewModel.activeTabId.collectAsStateWithLifecycle()
     val revision by viewModel.revision.collectAsStateWithLifecycle()
+    val creatingTab by viewModel.creatingTab.collectAsStateWithLifecycle()
     val terminalSettings by viewModel.terminalSettings.collectAsStateWithLifecycle()
     var showToolsSheet by remember { mutableStateOf(false) }
 
@@ -154,6 +155,7 @@ fun TerminalScreen(
                     TabBar(
                         tabs = tabs,
                         activeTabId = activeTabId,
+                        creating = creatingTab,
                         onSelect = { viewModel.activate(it) },
                         onClose = { viewModel.closeTab(it) },
                         onNew = { viewModel.newTab() }
@@ -163,7 +165,7 @@ fun TerminalScreen(
                         val active = tabs.firstOrNull { it.id == activeTabId }
                         if (active == null) {
                             StatusView(
-                                loading = false,
+                                loading = creatingTab,
                                 message = stringResource(R.string.terminal_no_open_tabs),
                                 actionLabel = stringResource(R.string.common_new_tab),
                                 onAction = { viewModel.newTab() }
@@ -209,6 +211,7 @@ fun TerminalScreen(
 private fun TabBar(
     tabs: List<TerminalTab>,
     activeTabId: String?,
+    creating: Boolean,
     onSelect: (String) -> Unit,
     onClose: (String) -> Unit,
     onNew: () -> Unit
@@ -256,13 +259,22 @@ private fun TabBar(
                     modifier = Modifier.onGloballyPositioned { tabBounds[tab.id] = it.boundsInParent() }
                 )
             }
-            IconButton(onClick = onNew, modifier = Modifier.size(32.dp)) {
-                Icon(
-                    FeatherIcons.Plus,
-                    contentDescription = stringResource(R.string.common_new_tab),
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
-                )
+            // SSH 模式下新建需等服务器响应，等待期间显示转圈并禁用按钮，避免网络卡顿时重复点击连开多个标签。
+            IconButton(onClick = onNew, enabled = !creating, modifier = Modifier.size(32.dp)) {
+                if (creating) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(16.dp),
+                        strokeWidth = 2.dp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Icon(
+                        FeatherIcons.Plus,
+                        contentDescription = stringResource(R.string.common_new_tab),
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(16.dp)
+                    )
+                }
             }
         }
     }
