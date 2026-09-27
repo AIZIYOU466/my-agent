@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 56,
-    "identityHash": "93bc27271f96e1ca6c58424be0180f77",
+    "identityHash": "5e62c23a787f93a82fe44fec23541536",
     "entities": [
       {
         "tableName": "agent_messages",
@@ -255,7 +255,7 @@
       },
       {
         "tableName": "ai_providers",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `type` TEXT NOT NULL, `apiKey` TEXT NOT NULL, `multiKeyEnabled` INTEGER NOT NULL, `apiKeys` TEXT NOT NULL, `keyRotationStrategy` TEXT NOT NULL, `keyFailoverThreshold` INTEGER NOT NULL, `keyCooldownMinutes` INTEGER NOT NULL, `keySwitchStatusCodes` TEXT NOT NULL, `baseUrl` TEXT NOT NULL, `defaultModel` TEXT NOT NULL, `models` TEXT NOT NULL, `selectedModel` TEXT NOT NULL, `isEnabled` INTEGER NOT NULL, `useFullUrl` INTEGER NOT NULL, `useResponseApi` INTEGER NOT NULL, `anthropicCacheBreakpoints` INTEGER NOT NULL, `openaiChatCacheKey` INTEGER NOT NULL, `balanceScriptPath` TEXT NOT NULL, `balanceRefreshInterval` INTEGER NOT NULL, `customHeaders` TEXT NOT NULL, `sortOrder` INTEGER NOT NULL, `proxyEnabled` INTEGER NOT NULL, `proxyType` TEXT NOT NULL, `proxyHost` TEXT NOT NULL, `proxyPort` INTEGER NOT NULL, `proxyUsername` TEXT NOT NULL, `proxyPassword` TEXT NOT NULL, `scriptParams` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `type` TEXT NOT NULL, `apiKey` TEXT NOT NULL, `multiKeyEnabled` INTEGER NOT NULL, `apiKeys` TEXT NOT NULL, `keyRotationStrategy` TEXT NOT NULL, `keyFailoverThreshold` INTEGER NOT NULL, `keyCooldownMinutes` INTEGER NOT NULL, `keySwitchStatusCodes` TEXT NOT NULL, `baseUrl` TEXT NOT NULL, `defaultModel` TEXT NOT NULL, `models` TEXT NOT NULL, `selectedModel` TEXT NOT NULL, `isEnabled` INTEGER NOT NULL, `useFullUrl` INTEGER NOT NULL, `useResponseApi` INTEGER NOT NULL, `anthropicCacheBreakpoints` INTEGER NOT NULL, `openaiChatCacheKey` INTEGER NOT NULL, `balanceScriptPath` TEXT NOT NULL, `balanceRefreshInterval` INTEGER NOT NULL, `userAgent` TEXT NOT NULL, `customHeaders` TEXT NOT NULL, `sortOrder` INTEGER NOT NULL, `proxyEnabled` INTEGER NOT NULL, `proxyType` TEXT NOT NULL, `proxyHost` TEXT NOT NULL, `proxyPort` INTEGER NOT NULL, `proxyUsername` TEXT NOT NULL, `proxyPassword` TEXT NOT NULL, `scriptParams` TEXT NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -381,6 +381,12 @@
             "fieldPath": "dashboardRefreshInterval",
             "columnName": "balanceRefreshInterval",
             "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "userAgent",
+            "columnName": "userAgent",
+            "affinity": "TEXT",
             "notNull": true
           },
           {
@@ -902,7 +908,7 @@
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '93bc27271f96e1ca6c58424be0180f77')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '5e62c23a787f93a82fe44fec23541536')"
     ]
   }
 }

@@ -42,6 +42,12 @@ data class AIProviderEntity(
     /** 自定义面板自动刷新间隔（分钟）。默认 5 分钟。列名沿用历史命名以兼容已发布数据库。 */
     @ColumnInfo(name = "balanceRefreshInterval")
     val dashboardRefreshInterval: Int = 5,
+    /**
+     * 已废弃：被 [customHeaders] 取代的 UA 覆盖列。保留字段以兼容旧数据库——
+     * 迁移 40 加的物理列无法删除（SQLite 3.18 无 DROP COLUMN），实体缺列会让 Room
+     * 迁移后的 schema 校验失败（列集合精确比较，多一列即崩）。
+     */
+    val userAgent: String = "",
     /** 自定义请求头（JSON 编码的 Map<Header 名, 值>，空为 ""），完全覆盖同名默认头。 */
     val customHeaders: String = "",
     /** 提供商列表排序序号，越小越靠前；新建时分配 max+1。 */
