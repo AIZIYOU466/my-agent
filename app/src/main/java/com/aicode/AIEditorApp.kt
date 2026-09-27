@@ -25,6 +25,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -179,6 +180,10 @@ class AIEditorApp : Application(), Configuration.Provider {
     @Inject
     lateinit var remoteSshConnection: com.aicode.feature.agent.domain.container.RemoteSshConnection
 
+    /** 当前激活 profile 的连接配置解析器：连接/profile/模式变化时驱动重连。 */
+    @Inject
+    lateinit var activeRemoteConnectionResolver: com.aicode.feature.agent.domain.container.ActiveRemoteConnectionResolver
+
     /** 工作区仓库：SSH 重连成功后重新加载工作区。 */
     @Inject
     lateinit var workspaceRepository: com.aicode.feature.workspace.data.repository.WorkspaceRepository
@@ -267,28 +272,28 @@ class AIEditorApp : Application(), Configuration.Provider {
         appScope.launch {
             val mode = executionModeRepository.executionModeFlow.first()
             executionModeHolder.setMode(mode)
-            if (mode == com.aicode.feature.settings.data.repository.ExecutionMode.REMOTE_SSH) {
-                executionModeRepository.remoteConnectionFlow.first()?.let { settings ->
-                    runCatching {
-                        remoteSshConnection.connect(
-                            com.aicode.feature.agent.domain.container.RemoteConnectionConfig(
-                                host = settings.host,
-                                port = settings.port,
-                                username = settings.username,
-                                auth = com.aicode.feature.workspace.domain.remote.RemoteAuth.Password(settings.password),
-                                remoteWorkspacePath = settings.remoteWorkspacePath
-                            )
-                        )
-                        // 连接成功后同步内置文档到远程 ~/.aicode/docs/，供 AI 查阅。
-                        syncDocsToRemote()
-                    }.onFailure { FileLogger.e(TAG, "启动时 SSH 连接失败，将在首次命令时重试", it) }
-                }
-                // 启动 SSH 连接监督：定期探活、断线自动重连、重连成功后重新加载工作区与同步文档。
-                remoteSshConnection.startSupervisor(appScope) {
-                    runCatching { workspaceRepository.initialize() }
-                        .onFailure { FileLogger.w(TAG, "SSH 重连后重新加载工作区失败", it) }
+        }
+        // SSH 连接监督常驻（config 为空时空转）：定期探活、断线自动重连，重连成功后重载工作区与同步文档。
+        appScope.launch {
+            remoteSshConnection.startSupervisor(appScope) {
+                runCatching { workspaceRepository.initialize() }
+                    .onFailure { FileLogger.w(TAG, "SSH 重连后重新加载工作区失败", it) }
+                syncDocsToRemote()
+            }
+        }
+        // 当前激活 profile 的连接配置变化（编辑连接/编辑 profile/切 profile/切模式）即重连，改连接即时生效。
+        appScope.launch {
+            combine(
+                activeRemoteConnectionResolver.activeConfigFlow,
+                executionModeHolder.mode
+            ) { config, mode -> config to mode }.collect { (config, mode) ->
+                if (mode != com.aicode.feature.settings.data.repository.ExecutionMode.REMOTE_SSH) return@collect
+                if (config == null || config == remoteSshConnection.config) return@collect
+                runCatching {
+                    remoteSshConnection.connect(config)
+                    // 连接成功后同步内置文档到远程 ~/.aicode/docs/，供 AI 查阅。
                     syncDocsToRemote()
-                }
+                }.onFailure { FileLogger.e(TAG, "SSH 连接失败，将在首次命令时重试", it) }
             }
         }
         // 连接与同步的「跟随当前工作区」由 RemoteRepository 内部监听工作区变化自动执行（启动注入即就绪）：
