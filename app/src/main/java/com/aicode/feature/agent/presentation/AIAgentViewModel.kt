@@ -111,6 +111,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.io.OutputStream
@@ -426,6 +427,14 @@ class AIAgentViewModel @Inject constructor(
     }
     val expandedPaths: StateFlow<Set<String>> = _expandedPaths.asStateFlow()
 
+    /** 正在展开、等待列目录返回的目录路径（远程 SSH 下 listFiles 可能耗时数秒）；UI 在该行显示等待动画。 */
+    private val _expandingPath = MutableStateFlow<String?>(null)
+    val expandingPath: StateFlow<String?> = _expandingPath.asStateFlow()
+
+    /** 正在执行写操作（新建/重命名/删除/复制/移动）的条目路径集合；UI 在对应行与工具栏显示等待动画。 */
+    private val _fileOpPaths = MutableStateFlow<Set<String>>(emptySet())
+    val fileOpPaths: StateFlow<Set<String>> = _fileOpPaths.asStateFlow()
+
     /** 手动刷新信号：远程模式无 inotify，只能靠它；本地模式作为兜底。 */
     private val _browseRefresh = MutableStateFlow(0)
 
@@ -449,6 +458,8 @@ class AIAgentViewModel @Inject constructor(
                 triggers.collect { emit(buildBrowseTree(expanded)) }
             }.flowOn(Dispatchers.IO)
         }
+        // 新树已就绪：清掉展开等待态（无论成功/出错都清，避免转圈卡死）。
+        .onEach { _expandingPath.value = null }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), FileBrowseState.Loading)
 
     /** 读取工作区根并按 [expanded] 递归展开，产出扁平的可见节点列表；根读取失败则整体报错。 */
@@ -516,12 +527,15 @@ class AIAgentViewModel @Inject constructor(
         _browseRefresh.value++
     }
 
-    /** 展开/折叠目录；折叠时连同其所有后代一并移出展开集，避免残留监听与再展开时意外深开。改变后按工作区持久化。 */
+    /** 展开/折叠目录；折叠时连同其所有后代一并移出展开集，避免残留监听与再展开时意外深开。改变后按工作区持久化。
+     *  展开需等列目录返回，期间标记 [expandingPath] 让 UI 显示等待动画，并忽略对同一目录的重复点击（否则会把它折回去）。 */
     fun toggleExpand(path: String) {
+        if (path == _expandingPath.value) return
         val current = _expandedPaths.value
         val updated = if (path in current) {
             current.filterNot { it == path || it.startsWith("$path/") }.toSet()
         } else {
+            _expandingPath.value = path
             current + path
         }
         _expandedPaths.value = updated
@@ -530,16 +544,26 @@ class AIAgentViewModel @Inject constructor(
 
     /**
      * 文件浏览的写操作共用包装：跑 IO 调度器，成功后主动重读目录（远程模式无 inotify）。
+     * [busyPaths] 为本次操作涉及的条目路径，操作期间加入 [fileOpPaths] 让 UI 显示等待动画。
      * [block] 返回 false 表示名称非法或同名已存在，抛异常表示 IO 失败，两者均回报失败。
      */
-    private fun mutateBrowse(onResult: (Boolean) -> Unit, block: () -> Boolean) = viewModelScope.launch {
-        val success = withContext(Dispatchers.IO) {
-            runCatching(block)
-                .onFailure { FileLogger.w(TAG, "文件操作失败", it) }
-                .getOrDefault(false)
+    private fun mutateBrowse(
+        busyPaths: Set<String> = emptySet(),
+        onResult: (Boolean) -> Unit,
+        block: () -> Boolean
+    ) = viewModelScope.launch {
+        if (busyPaths.isNotEmpty()) _fileOpPaths.value = _fileOpPaths.value + busyPaths
+        try {
+            val success = withContext(Dispatchers.IO) {
+                runCatching(block)
+                    .onFailure { FileLogger.w(TAG, "文件操作失败", it) }
+                    .getOrDefault(false)
+            }
+            if (success) refreshBrowse()
+            onResult(success)
+        } finally {
+            if (busyPaths.isNotEmpty()) _fileOpPaths.value = _fileOpPaths.value - busyPaths
         }
-        if (success) refreshBrowse()
-        onResult(success)
     }
 
     /** [parent] 目录下的子路径；名称非法时返回 null。 */
@@ -547,43 +571,49 @@ class AIAgentViewModel @Inject constructor(
         if (isValidFileEntryName(name)) "$parent/${name.trim()}" else null
 
     /** 在 [parent] 目录新建空文件。 */
-    fun createBrowseFile(parent: String, name: String, onResult: (Boolean) -> Unit) = mutateBrowse(onResult) {
+    fun createBrowseFile(parent: String, name: String, onResult: (Boolean) -> Unit) {
         val target = browseChildPath(parent, name)
-        if (target == null || fileAccess.exists(target)) {
-            false
-        } else {
-            fileAccess.writeFile(target, "", overwrite = false)
-            true
+        mutateBrowse(busyPaths = target?.let { setOf(it) } ?: emptySet(), onResult = onResult) {
+            if (target == null || fileAccess.exists(target)) {
+                false
+            } else {
+                fileAccess.writeFile(target, "", overwrite = false)
+                true
+            }
         }
     }
 
     /** 在 [parent] 目录新建文件夹。 */
-    fun createBrowseFolder(parent: String, name: String, onResult: (Boolean) -> Unit) = mutateBrowse(onResult) {
+    fun createBrowseFolder(parent: String, name: String, onResult: (Boolean) -> Unit) {
         val target = browseChildPath(parent, name)
-        if (target == null || fileAccess.exists(target)) {
-            false
-        } else {
-            fileAccess.mkdirs(target)
-            fileAccess.isDirectory(target)
+        mutateBrowse(busyPaths = target?.let { setOf(it) } ?: emptySet(), onResult = onResult) {
+            if (target == null || fileAccess.exists(target)) {
+                false
+            } else {
+                fileAccess.mkdirs(target)
+                fileAccess.isDirectory(target)
+            }
         }
     }
 
     /** 重命名条目（仅同目录内改名，不跨目录移动）。 */
-    fun renameBrowseEntry(path: String, newName: String, onResult: (Boolean) -> Unit) = mutateBrowse(onResult) {
-        val parent = path.substringBeforeLast('/', "")
-        if (parent.isEmpty() || !isValidFileEntryName(newName)) {
-            false
-        } else {
-            fileAccess.rename(path, "$parent/${newName.trim()}")
-            true
+    fun renameBrowseEntry(path: String, newName: String, onResult: (Boolean) -> Unit) =
+        mutateBrowse(busyPaths = setOf(path), onResult = onResult) {
+            val parent = path.substringBeforeLast('/', "")
+            if (parent.isEmpty() || !isValidFileEntryName(newName)) {
+                false
+            } else {
+                fileAccess.rename(path, "$parent/${newName.trim()}")
+                true
+            }
         }
-    }
 
     /** 删除条目；目录连同内容递归删除。 */
-    fun deleteBrowseEntry(path: String, onResult: (Boolean) -> Unit) = mutateBrowse(onResult) {
-        fileAccess.deleteRecursively(path)
-        true
-    }
+    fun deleteBrowseEntry(path: String, onResult: (Boolean) -> Unit) =
+        mutateBrowse(busyPaths = setOf(path), onResult = onResult) {
+            fileAccess.deleteRecursively(path)
+            true
+        }
 
     // region 文件复制 / 剪切 / 粘贴
 
@@ -639,7 +669,8 @@ class AIAgentViewModel @Inject constructor(
     }
 
     private fun performPaste(clip: BrowseClipboard, target: String, overwrite: Boolean, onResult: (Boolean) -> Unit) {
-        mutateBrowse({ success ->
+        val busyPaths = if (clip.isCut) setOf(clip.sourcePath, target) else setOf(target)
+        mutateBrowse(busyPaths = busyPaths, onResult = { success ->
             // 无论复制还是剪切，粘贴成功即清空剪切板，避免重复粘贴；失败保留，允许重试。
             if (success) _browseClipboard.value = null
             onResult(success)

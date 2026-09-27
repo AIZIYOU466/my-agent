@@ -403,6 +403,8 @@ fun AppNavigation(
     val awaitingPermissionSessionIds by agentViewModel.awaitingPermissionSessionIds.collectAsStateWithLifecycle()
     val subSessionsByParent by agentViewModel.subSessionsByParent.collectAsStateWithLifecycle()
     val expandedPaths by agentViewModel.expandedPaths.collectAsStateWithLifecycle()
+    val expandingPath by agentViewModel.expandingPath.collectAsStateWithLifecycle()
+    val fileOpPaths by agentViewModel.fileOpPaths.collectAsStateWithLifecycle()
     val browseState by agentViewModel.browseState.collectAsStateWithLifecycle()
     val browseClipboard by agentViewModel.browseClipboard.collectAsStateWithLifecycle()
     val pasteConflict by agentViewModel.pasteConflict.collectAsStateWithLifecycle()
@@ -538,6 +540,8 @@ fun AppNavigation(
             subSessionsByParent = subSessionsByParent,
             browseState = browseState,
             expandedPaths = expandedPaths,
+            expandingPath = expandingPath,
+            fileOpPaths = fileOpPaths,
             clipboard = browseClipboard,
             pasteConflict = pasteConflict,
             onToggleExpand = { agentViewModel.toggleExpand(it) },
