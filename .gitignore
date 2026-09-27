@@ -33,6 +33,3 @@ log-*.txt
 # Python（模型数据更新脚本）
 __pycache__/
 *.pyc
-
-# 参考源码（opencode 仓库，仅本地查阅不跟踪）
-opencode/
