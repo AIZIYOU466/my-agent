@@ -100,5 +100,17 @@
     "tags": [
       "注册送10元"
     ]
+  },
+  {
+    "id": "aicode",
+    "name": "AiCode",
+    "type": "OPENAI",
+    "baseUrl": "https://ai.murk.top/v1",
+    "isRecommended": true,
+    "badge": null,
+    "websiteUrl": "https://ai.murk.top",
+    "tags": [
+      "签到领额度"
+    ]
   }
 ]

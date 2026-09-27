@@ -29,8 +29,8 @@ class ModelMetadataService @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** 统一拉取器：模型元数据与 provider 预设同链路，统一从本仓库 main 分支拉取。 */
-    private val repoFetcher = RepoDataFetcher(context)
+    /** 统一拉取器：模型元数据从独立数据分支拉取，避免每日机器产物污染 main。 */
+    private val repoFetcher = RepoDataFetcher(context, branch = MODELS_BRANCH)
 
     @Volatile
     private var cached: Catalog? = null
@@ -267,7 +267,10 @@ class ModelMetadataService @Inject constructor(
         const val TAG = "ModelMetadataService"
         const val ASSET_FILE_NAME = "api.official.json"
 
-        /** 统一拉取器中的仓库相对路径：本仓库维护的 models.dev 全量快照（CI 每日同步）。 */
+        /** 承载 models.dev 全量快照的独立数据分支（CI 每日同步，main 只保留人工提交）。 */
+        const val MODELS_BRANCH = "data"
+
+        /** 统一拉取器中的仓库相对路径：本仓库维护的 models.dev 全量快照（CI 每日同步至 [MODELS_BRANCH]）。 */
         const val MODELS_REPO_PATH = "data/models.json"
         const val DEFAULT_CONTEXT_TOKENS = 128_000
         const val DEFAULT_OUTPUT_TOKENS = 64_000
