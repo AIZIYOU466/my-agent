@@ -1475,10 +1475,11 @@
     <string name="provider_multi_key_manage">多 Key 管理</string>
     <string name="provider_multi_key_summary">%1$d 个 · %2$s</string>
     <string name="provider_multi_key_list">Key 列表</string>
-    <string name="provider_multi_key_item">Key %1$d</string>
+    <string name="provider_multi_key_item">密钥 #%1$d</string>
     <string name="provider_multi_key_empty">点此添加第一个 Key</string>
     <string name="provider_multi_key_add">添加 Key</string>
-    <string name="provider_multi_key_remove">删除该 Key</string>
+    <string name="provider_multi_key_weight">调度权重</string>
+    <string name="provider_multi_key_weight_hint">默认 1 · ≤ 0 时不参与 · 最大 1,000,000</string>
     <string name="provider_multi_key_strategy">取用策略</string>
     <string name="provider_multi_key_strategy_sequential">顺序</string>
     <string name="provider_multi_key_strategy_sequential_desc">始终用靠前的 Key，失败达阈值才切下一个</string>

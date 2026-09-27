@@ -39,12 +39,14 @@ If you hold multiple keys for the same service, turn on **Multi-Key Mode** in th
 
 The management page has three sections:
 
-**Key list**: add/remove keys row by row — the order is the priority. The eye icon at the top-right toggles plaintext/masked display for the whole page.
+**Key list**: each key is a collapsible card — collapsed it shows the index and a masked preview, tap to expand. Expanded you can edit that key and set its **weight**. Swipe a card left to delete it; long-press the card header and drag to reorder (the order survives restart). The eye icon toggles plaintext/masked display per key.
+
+**Scheduling weight**: each key carries its own weight, default `1`, max `1,000,000`; `≤ 0` keeps the key but excludes it from scheduling. Weight only affects the **round robin** strategy — a higher value means new sessions land on that key more often (smooth proportional distribution, e.g. `1:3` is roughly a one-to-three split).
 
 **Pickup strategy**:
 
-- `Sequential`: always use the first key, and only switch to the next after failing up to a threshold.
-- `Round robin`: new sessions start from different keys in turn, spreading quota consumption across keys.
+- `Sequential`: always use the first key, and only switch to the next when it becomes unavailable.
+- `Round robin`: new sessions start from keys in turn, weighted by each key's weight, to spread quota consumption across keys.
 
 To protect server-side prompt caching and keep a session consistent, **one key is kept within a single session** — no frequent switching that would invalidate the server cache.
 

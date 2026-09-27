@@ -1476,10 +1476,11 @@
     <string name="provider_multi_key_manage">Manage Keys</string>
     <string name="provider_multi_key_summary">%1$d keys · %2$s</string>
     <string name="provider_multi_key_list">Key List</string>
-    <string name="provider_multi_key_item">Key %1$d</string>
+    <string name="provider_multi_key_item">Key #%1$d</string>
     <string name="provider_multi_key_empty">Tap to add the first key</string>
     <string name="provider_multi_key_add">Add key</string>
-    <string name="provider_multi_key_remove">Remove this key</string>
+    <string name="provider_multi_key_weight">Scheduling weight</string>
+    <string name="provider_multi_key_weight_hint">Default 1 · ≤ 0 excluded · Max 1,000,000</string>
     <string name="provider_multi_key_strategy">Selection Strategy</string>
     <string name="provider_multi_key_strategy_sequential">Sequential</string>
     <string name="provider_multi_key_strategy_sequential_desc">Always use the earliest key; move on only after the failure threshold</string>

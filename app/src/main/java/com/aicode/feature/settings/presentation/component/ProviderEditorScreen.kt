@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -57,6 +58,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import com.aicode.core.ui.AdaptiveModalBottomSheet
+import com.aicode.core.ui.SwipeToDeleteRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -123,6 +125,8 @@ import com.aicode.feature.settings.data.remote.ModelTestResult
 import com.aicode.feature.settings.domain.model.AIProviderConfig
 import com.aicode.feature.settings.domain.model.KeyRotationStrategy
 import com.aicode.feature.settings.domain.model.ModelMetadata
+import com.aicode.feature.settings.domain.model.MAX_KEY_WEIGHT
+import com.aicode.feature.settings.domain.model.ProviderKey
 import com.aicode.feature.settings.domain.model.ProviderType
 import com.aicode.feature.settings.data.repository.ProxyConfig
 import com.aicode.feature.settings.domain.model.ProxyType
@@ -132,6 +136,8 @@ import com.aicode.feature.settings.domain.model.sanitized
 import com.aicode.feature.settings.presentation.FetchState
 import com.aicode.feature.settings.presentation.SettingsViewModel
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.AlertCircle
 import compose.icons.feathericons.ArrowLeft
@@ -192,7 +198,7 @@ fun ProviderEditorScreen(
     var apiKey by remember { mutableStateOf(initialProvider?.apiKey ?: "") }
     var apiKeyVisible by remember { mutableStateOf(false) }
     var multiKeyEnabled by remember { mutableStateOf(initialProvider?.multiKeyEnabled ?: false) }
-    val apiKeys = remember { mutableStateListOf<String>().apply { addAll(initialProvider?.apiKeys ?: emptyList()) } }
+    val apiKeys = remember { mutableStateListOf<ProviderKey>().apply { addAll(initialProvider?.apiKeys ?: emptyList()) } }
     var keyRotationStrategy by remember { mutableStateOf(initialProvider?.keyRotationStrategy ?: KeyRotationStrategy.SEQUENTIAL) }
     var keyCooldownMinutes by remember { mutableIntStateOf(initialProvider?.keyCooldownMinutes ?: 5) }
     var keySwitchStatusCodes by remember {
@@ -333,7 +339,7 @@ fun ProviderEditorScreen(
         initialProvider != null ||
             name.isNotBlank() ||
             apiKey.isNotBlank() ||
-            apiKeys.any { it.isNotBlank() } ||
+            apiKeys.any { it.value.isNotBlank() } ||
             baseUrl.isNotBlank() ||
             dashboardScriptPath.isNotBlank() ||
             scriptParams.any { it.first.isNotBlank() } ||
@@ -595,7 +601,7 @@ fun ProviderEditorScreen(
                             onCheckedChange = { enabled ->
                                 multiKeyEnabled = enabled
                                 // 开启时把已填的单 Key 带进列表，避免输入框隐藏后看起来「刚填的 Key 丢了」。
-                                if (enabled && apiKeys.isEmpty() && apiKey.isNotBlank()) apiKeys.add(apiKey)
+                                if (enabled && apiKeys.isEmpty() && apiKey.isNotBlank()) apiKeys.add(ProviderKey(apiKey))
                             }
                         )
                         if (multiKeyEnabled) {
@@ -608,7 +614,7 @@ fun ProviderEditorScreen(
                                     Text(
                                         text = stringResource(
                                             R.string.provider_multi_key_summary,
-                                            apiKeys.count { it.isNotBlank() },
+                                            apiKeys.count { it.value.isNotBlank() },
                                             keyRotationStrategyLabel(keyRotationStrategy)
                                         ),
                                         style = MaterialTheme.typography.bodyMedium,
@@ -1814,6 +1820,7 @@ private fun ProviderTextFieldRow(
     onValueChange: (String) -> Unit,
     placeholder: String = "",
     visualTransformation: VisualTransformation = VisualTransformation.None,
+    keyboardType: KeyboardType = KeyboardType.Text,
     trailing: (@Composable () -> Unit)? = null
 ) {
     AppTextField(
@@ -1823,6 +1830,7 @@ private fun ProviderTextFieldRow(
         placeholder = if (placeholder.isNotBlank()) placeholder else null,
         singleLine = true,
         visualTransformation = visualTransformation,
+        keyboardOptions = KeyboardOptions(keyboardType = keyboardType),
         trailingIcon = trailing,
         modifier = Modifier
             .fillMaxWidth()
@@ -1998,7 +2006,7 @@ private fun keyRotationStrategyLabel(strategy: KeyRotationStrategy): String = st
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ProviderKeysPage(
-    keys: MutableList<String>,
+    keys: MutableList<ProviderKey>,
     strategy: KeyRotationStrategy,
     cooldownMinutes: Int,
     switchStatusCodes: String,
@@ -2007,7 +2015,32 @@ private fun ProviderKeysPage(
     onSetCooldownMinutes: (Int) -> Unit,
     onSetSwitchStatusCodes: (String) -> Unit
 ) {
-    var keysVisible by remember { mutableStateOf(false) }
+    // 行稳定 id：Key 值可被就地编辑，不能拿它当 LazyColumn 的 key，否则每敲一个字都换一次身份、输入框会失焦。
+    val rowIds = remember { mutableStateListOf<Int>().apply { keys.indices.forEach { add(it) } } }
+    var nextRowId by remember { mutableIntStateOf(keys.size) }
+    var expandedIds by remember { mutableStateOf(emptySet<Int>()) }
+    val hapticFeedback = LocalHapticFeedback.current
+
+    fun addKey() {
+        val rowId = nextRowId
+        keys.add(ProviderKey(""))
+        rowIds.add(rowId)
+        expandedIds = expandedIds + rowId
+        nextRowId = rowId + 1
+    }
+
+    val lazyListState = rememberLazyListState()
+    val reorderableState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        // onMove 下标按整个 LazyColumn 算，减去前置小标题项才是 Key 下标；落在策略/失败切换区则忽略。
+        val fromIndex = from.index - PROVIDER_KEYS_LEADING_ITEMS
+        val toIndex = to.index - PROVIDER_KEYS_LEADING_ITEMS
+        if (fromIndex !in keys.indices || toIndex !in keys.indices || fromIndex == toIndex) {
+            return@rememberReorderableLazyListState
+        }
+        keys.add(toIndex, keys.removeAt(fromIndex))
+        rowIds.add(toIndex, rowIds.removeAt(fromIndex))
+    }
+
     Scaffold(
         containerColor = settingsPageBackground(),
         topBar = {
@@ -2023,117 +2056,250 @@ private fun ProviderKeysPage(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { keysVisible = !keysVisible }) {
-                        Icon(
-                            imageVector = if (keysVisible) FeatherIcons.EyeOff else FeatherIcons.Eye,
-                            contentDescription = stringResource(
-                                if (keysVisible) R.string.provider_hide_api_key else R.string.provider_show_api_key
-                            )
-                        )
-                    }
-                    IconButton(onClick = { keys.add("") }) {
+                    IconButton(onClick = { addKey() }) {
                         Icon(FeatherIcons.Plus, contentDescription = stringResource(R.string.provider_multi_key_add))
                     }
                 }
             )
         }
     ) { padding ->
-        Column(
+        LazyColumn(
+            state = lazyListState,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .imePadding()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = Spacing.lg)
-                .padding(bottom = Spacing.xl),
+                .imePadding(),
+            contentPadding = PaddingValues(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.xl),
             verticalArrangement = Arrangement.spacedBy(Spacing.sm)
         ) {
-            SettingsGroupHeader(text = stringResource(R.string.provider_multi_key_list))
-            SettingsGroup {
-                if (keys.isEmpty()) {
-                    SettingsRow(
-                        icon = null,
-                        title = stringResource(R.string.provider_multi_key_empty),
-                        onClick = { keys.add("") }
-                    )
-                } else {
-                    keys.forEachIndexed { index, key ->
-                        ProviderTextFieldRow(
-                            label = stringResource(R.string.provider_multi_key_item, index + 1),
-                            value = key,
-                            onValueChange = { keys[index] = it },
-                            visualTransformation = if (keysVisible) {
-                                VisualTransformation.None
-                            } else {
-                                PasswordVisualTransformation()
-                            },
-                            trailing = {
-                                Icon(
-                                    imageVector = FeatherIcons.X,
-                                    contentDescription = stringResource(R.string.provider_multi_key_remove),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier
-                                        .size(24.dp)
-                                        .clickable { keys.removeAt(index) }
-                                        .padding(4.dp)
+            item {
+                SettingsGroupHeader(text = stringResource(R.string.provider_multi_key_list))
+            }
+
+            if (keys.isEmpty()) {
+                item {
+                    SettingsGroup {
+                        SettingsRow(
+                            icon = null,
+                            title = stringResource(R.string.provider_multi_key_empty),
+                            onClick = { addKey() }
+                        )
+                    }
+                }
+            } else {
+                itemsIndexed(items = keys, key = { index, _ -> rowIds[index] }) { index, key ->
+                    val rowId = rowIds[index]
+                    ReorderableItem(state = reorderableState, key = rowId) { isDragging ->
+                        val dragScale by animateFloatAsState(
+                            targetValue = if (isDragging) 0.95f else 1f,
+                            animationSpec = tween(durationMillis = if (isDragging) 120 else 220),
+                            label = "providerKeyDragScale"
+                        )
+                        val dragElevation by animateDpAsState(
+                            targetValue = if (isDragging) 8.dp else 0.dp,
+                            animationSpec = tween(durationMillis = if (isDragging) 120 else 220),
+                            label = "providerKeyDragElevation"
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = MaterialTheme.semanticColors.cardSurface,
+                            shadowElevation = dragElevation,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .zIndex(if (isDragging) 1f else 0f)
+                                .graphicsLayer {
+                                    scaleX = dragScale
+                                    scaleY = dragScale
+                                }
+                        ) {
+                            SwipeToDeleteRow(
+                                onDelete = {
+                                    keys.removeAt(index)
+                                    rowIds.removeAt(index)
+                                },
+                                onClick = {
+                                    expandedIds = if (rowId in expandedIds) expandedIds - rowId else expandedIds + rowId
+                                }
+                            ) {
+                                ProviderKeyCard(
+                                    index = index,
+                                    key = key,
+                                    expanded = rowId in expandedIds,
+                                    onValueChange = { keys[index] = keys[index].copy(value = it) },
+                                    onWeightChange = { keys[index] = keys[index].copy(weight = it) },
+                                    dragModifier = Modifier.longPressDraggableHandle(
+                                        onDragStarted = {
+                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.GestureThresholdActivate)
+                                        },
+                                        onDragStopped = {
+                                            hapticFeedback.performHapticFeedback(HapticFeedbackType.GestureEnd)
+                                        }
+                                    )
                                 )
+                            }
+                        }
+                    }
+                }
+            }
+
+            item { SettingsGroupHeader(text = stringResource(R.string.provider_multi_key_strategy)) }
+            item {
+                SettingsGroup {
+                    KeyRotationStrategy.entries.forEachIndexed { index, item ->
+                        if (index > 0) SettingsDivider()
+                        SettingsRow(
+                            icon = null,
+                            title = keyRotationStrategyLabel(item),
+                            subtitle = stringResource(
+                                when (item) {
+                                    KeyRotationStrategy.SEQUENTIAL -> R.string.provider_multi_key_strategy_sequential_desc
+                                    KeyRotationStrategy.ROUND_ROBIN -> R.string.provider_multi_key_strategy_round_robin_desc
+                                }
+                            ),
+                            onClick = { onSetStrategy(item) },
+                            trailing = {
+                                if (item == strategy) {
+                                    Icon(
+                                        imageVector = FeatherIcons.Check,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
                             }
                         )
                     }
                 }
             }
 
-            SettingsGroupHeader(text = stringResource(R.string.provider_multi_key_strategy))
-            SettingsGroup {
-                KeyRotationStrategy.entries.forEachIndexed { index, item ->
-                    if (index > 0) SettingsDivider()
-                    SettingsRow(
-                        icon = null,
-                        title = keyRotationStrategyLabel(item),
-                        subtitle = stringResource(
-                            when (item) {
-                                KeyRotationStrategy.SEQUENTIAL -> R.string.provider_multi_key_strategy_sequential_desc
-                                KeyRotationStrategy.ROUND_ROBIN -> R.string.provider_multi_key_strategy_round_robin_desc
-                            }
-                        ),
-                        onClick = { onSetStrategy(item) },
-                        trailing = {
-                            if (item == strategy) {
-                                Icon(
-                                    imageVector = FeatherIcons.Check,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
+            item { SettingsGroupHeader(text = stringResource(R.string.provider_multi_key_failover)) }
+            item {
+                SettingsGroup {
+                    ProviderTextFieldRow(
+                        label = stringResource(R.string.provider_multi_key_status_codes),
+                        value = switchStatusCodes,
+                        onValueChange = { input -> onSetSwitchStatusCodes(input.filter { it.isDigit() || it == ',' }) },
+                        placeholder = stringResource(R.string.provider_multi_key_status_codes_hint)
+                    )
+                    SettingsDivider()
+                    StepperRow(
+                        title = stringResource(R.string.provider_multi_key_cooldown),
+                        subtitle = stringResource(R.string.provider_multi_key_cooldown_desc),
+                        valueText = if (cooldownMinutes <= 0) {
+                            stringResource(R.string.provider_multi_key_cooldown_off)
+                        } else {
+                            stringResource(R.string.provider_multi_key_cooldown_value, cooldownMinutes)
+                        },
+                        onDecrease = { onSetCooldownMinutes((cooldownMinutes - 1).coerceAtLeast(0)) },
+                        onIncrease = { onSetCooldownMinutes((cooldownMinutes + 1).coerceAtMost(120)) }
                     )
                 }
             }
+        }
+    }
+}
 
-            SettingsGroupHeader(text = stringResource(R.string.provider_multi_key_failover))
-            SettingsGroup {
-                ProviderTextFieldRow(
-                    label = stringResource(R.string.provider_multi_key_status_codes),
-                    value = switchStatusCodes,
-                    onValueChange = { input -> onSetSwitchStatusCodes(input.filter { it.isDigit() || it == ',' }) },
-                    placeholder = stringResource(R.string.provider_multi_key_status_codes_hint)
-                )
+/** Key 列表前的固定项数量：一个分组小标题。拖拽回调下标需减去它才能映射到 Key 下标。 */
+private const val PROVIDER_KEYS_LEADING_ITEMS = 1
+
+/**
+ * 单条 Key 卡片：折叠时只显示序号与掩码预览，展开后可编辑 Key 与调度权重。
+ * 长按头部拖动可调整顺序（[dragModifier] 由 ReorderableItem 作用域提供）。
+ */
+@Composable
+private fun ProviderKeyCard(
+    index: Int,
+    key: ProviderKey,
+    expanded: Boolean,
+    onValueChange: (String) -> Unit,
+    onWeightChange: (Int) -> Unit,
+    dragModifier: Modifier
+) {
+    var valueVisible by remember { mutableStateOf(false) }
+    val sortDescription = stringResource(R.string.provider_sort_long_press)
+
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .then(dragModifier)
+                .padding(start = Spacing.lg, end = Spacing.md, top = 11.dp, bottom = 11.dp)
+                .semantics { contentDescription = sortDescription },
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = stringResource(R.string.provider_multi_key_item, index + 1),
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Spacer(Modifier.width(Spacing.sm))
+            Text(
+                text = key.value.maskedKeyPreview(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                imageVector = if (expanded) FeatherIcons.ChevronUp else FeatherIcons.ChevronDown,
+                contentDescription = null,
+                tint = MaterialTheme.semanticColors.subtleText,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+
+        AnimatedVisibility(visible = expanded) {
+            Column(modifier = Modifier.fillMaxWidth()) {
                 SettingsDivider()
-                StepperRow(
-                    title = stringResource(R.string.provider_multi_key_cooldown),
-                    subtitle = stringResource(R.string.provider_multi_key_cooldown_desc),
-                    valueText = if (cooldownMinutes <= 0) {
-                        stringResource(R.string.provider_multi_key_cooldown_off)
+                ProviderTextFieldRow(
+                    label = stringResource(R.string.provider_api_key),
+                    value = key.value,
+                    onValueChange = onValueChange,
+                    visualTransformation = if (valueVisible) {
+                        VisualTransformation.None
                     } else {
-                        stringResource(R.string.provider_multi_key_cooldown_value, cooldownMinutes)
+                        PasswordVisualTransformation()
                     },
-                    onDecrease = { onSetCooldownMinutes((cooldownMinutes - 1).coerceAtLeast(0)) },
-                    onIncrease = { onSetCooldownMinutes((cooldownMinutes + 1).coerceAtMost(120)) }
+                    trailing = {
+                        Icon(
+                            imageVector = if (valueVisible) FeatherIcons.EyeOff else FeatherIcons.Eye,
+                            contentDescription = stringResource(
+                                if (valueVisible) R.string.provider_hide_api_key else R.string.provider_show_api_key
+                            ),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier
+                                .size(20.dp)
+                                .clickable { valueVisible = !valueVisible }
+                        )
+                    }
+                )
+                ProviderTextFieldRow(
+                    label = stringResource(R.string.provider_multi_key_weight),
+                    value = key.weight.toString(),
+                    onValueChange = { input ->
+                        onWeightChange(
+                            input.filter { it.isDigit() }.take(7).toIntOrNull()?.coerceAtMost(MAX_KEY_WEIGHT) ?: 0
+                        )
+                    },
+                    keyboardType = KeyboardType.Number
+                )
+                Text(
+                    text = stringResource(R.string.provider_multi_key_weight_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = Spacing.lg, end = Spacing.lg, bottom = Spacing.md)
                 )
             }
         }
     }
+}
+
+/** 卡片头部的密钥掩码预览：只露前两位，避免整串明文出现在列表里。 */
+private fun String.maskedKeyPreview(): String = when {
+    isBlank() -> ""
+    length <= 8 -> "******"
+    else -> "${take(2)}*****..."
 }
 
 /** 分组内数字步进行：标题 + 副标题，右侧「− 值 +」。 */
