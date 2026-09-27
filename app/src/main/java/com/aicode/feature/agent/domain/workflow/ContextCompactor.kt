@@ -21,6 +21,18 @@ import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * 上下文压缩结果。
+ *
+ * [messages] 为压缩后（未触发压缩时原样）的消息列表；[compacted] 表示本轮是否真的发生了压缩。
+ * 上层判断「有无变化」必须用 [compacted]，不能靠列表长度或对象身份推断（长度在 head 恰为 2 条时
+ * 会与压缩后相等，对象身份则因每次返回新列表恒为 true）。
+ */
+data class CompactionResult(
+    val messages: List<AgentMessage>,
+    val compacted: Boolean
+)
+
 @Singleton
 class ContextCompactor @Inject constructor(
     private val agentMessageDao: AgentMessageDao,
@@ -47,7 +59,8 @@ class ContextCompactor @Inject constructor(
      * - 重启后 [MessagePersistenceUseCase.buildHistory] 会跳过 isCompacted 的消息，
      *   只回放摘要 + tail 部分
      *
-     * @return 压缩后的新列表（如果没有触发压缩则返回原列表的副本）
+     * @return [CompactionResult]：messages 为压缩后的新列表（未触发时是原列表的副本），
+     *   compacted 表示本轮是否真的压缩了
      */
     suspend fun compactIfNeeded(
         messages: List<AgentMessage>,
@@ -62,7 +75,7 @@ class ContextCompactor @Inject constructor(
          */
         windowProvider: AIProvider? = null,
         onEvent: suspend (AgentEvent) -> Unit = {}
-    ): List<AgentMessage> {
+    ): CompactionResult {
         val estimatedTokens = estimateTokens(messages)
         val windowModel = windowProvider ?: aiProvider
         val windowMetadata = modelMetadataService.resolve(windowModel.providerId, inferProviderType(windowModel), windowModel.model)
@@ -74,7 +87,7 @@ class ContextCompactor @Inject constructor(
         val reachedThreshold = currentTokens >= triggerThreshold
         val reachedHardLimit = currentTokens >= contextLimit
         if (messages.size <= 2 || (!force && !reachedThreshold && !reachedHardLimit)) {
-            return messages.toList()
+            return CompactionResult(messages.toList(), compacted = false)
         }
 
         val tokensSource = if (lastInputTokens > 0) "真实 usage" else "本地估算"
@@ -95,7 +108,7 @@ class ContextCompactor @Inject constructor(
         }
         if (splitIndex <= 0) {
             onEvent(AgentEvent.CompactionFinished)
-            return messages.toList()
+            return CompactionResult(messages.toList(), compacted = false)
         }
 
         // 确保 tail 的第一条消息不是孤立的 ToolResultMessage：
@@ -113,7 +126,7 @@ class ContextCompactor @Inject constructor(
             // 重复压缩时 head 可能只剩旧的 marker+summary 对，删光后无可压缩内容，跳过本轮压缩。
             FileLogger.i(TAG, "无可压缩内容（head 为空），跳过压缩")
             onEvent(AgentEvent.CompactionFinished)
-            return messages.toList()
+            return CompactionResult(messages.toList(), compacted = false)
         }
         // 压缩请求：head 原始消息数组 + 末尾一条压缩指令（Codex 式），tools 不发送。
         // 消息数组保留真实角色结构（user/assistant/tool 配对），比文本化拼接更利于模型理解。
@@ -144,7 +157,7 @@ class ContextCompactor @Inject constructor(
             FileLogger.e(TAG, "压缩上下文失败", e)
             onEvent(AgentEvent.CompactionFailed(callError))
             onEvent(AgentEvent.CompactionFinished)
-            return messages.toList() // 失败则原样返回，交由上层自行承担溢出风险
+            return CompactionResult(messages.toList(), compacted = false) // 失败则原样返回，交由上层自行承担溢出风险
         }
 
         val durationMillis = (SystemClock.elapsedRealtime() - callStartElapsed).toInt()
@@ -188,26 +201,26 @@ class ContextCompactor @Inject constructor(
             try {
                 val dbEntities = agentMessageDao.getMessagesBySessionOnce(sessionId
                 )
-                val firstTailId = tail.firstOrNull { msg -> msg.id.isNotEmpty() }?.id
-                val tailEntity = if (firstTailId != null) dbEntities.find { it.id == firstTailId } else null
-                val cutoffTimestamp = tailEntity?.timestamp ?: System.currentTimeMillis()
-
-                // 将 head 部分的消息标记为已压缩（不删除，保留数据完整性）
-                agentMessageDao.markMessagesCompactedBeforeTimestamp(sessionId, cutoffTimestamp)
-
-                // 摘要收尾：marker + summary 时间戳放在 tail 最后一条之后，回放/UI 顺序 = tail → 摘要，
-                // 与 Codex 一致（最近消息在前、接手摘要收尾），避免摘要插在历史最前导致观感混乱。
-                val tailLastTs = tail.asReversed().firstNotNullOfOrNull { msg ->
+                val tailFirstTs = tail.firstNotNullOfOrNull { msg ->
                     dbEntities.find { it.id == msg.id }?.timestamp
                 }
-                val insertBase = maxOf(System.currentTimeMillis(), tailLastTs ?: 0L) + 1
+                val anchorTs = tailFirstTs ?: System.currentTimeMillis()
+
+                // 将 head 部分的消息标记为已压缩（不删除，保留数据完整性）
+                agentMessageDao.markMessagesCompactedBeforeTimestamp(sessionId, anchorTs)
+
+                // 摘要放在 tail 之前：marker + summary 时间戳取在 tail 首条之前，回放/UI 顺序 = 摘要 → tail。
+                // 接手摘要作为上下文背景，最后一条消息仍是用户请求 / tool 结果，模型才会继续干活；
+                // 若放在末尾，模型会把摘要当成自己的上一轮，续写一大段后停下，不再执行任务。
+                val markerTs = (anchorTs - 2).coerceAtLeast(1L)
+                val summaryTs = markerTs + 1
                 agentMessageDao.insert(
                     AgentMessageEntity(
                         id = markerId,
                         sessionId = sessionId,
                         role = MessageRole.USER.name,
                         content = CONTEXT_COMPACTION_MARKER,
-                        timestamp = insertBase,
+                        timestamp = markerTs,
                         isCompactionMarker = true
                     )
                 )
@@ -217,7 +230,7 @@ class ContextCompactor @Inject constructor(
                         sessionId = sessionId,
                         role = MessageRole.ASSISTANT.name,
                         content = compactedMessage.content,
-                        timestamp = insertBase + 1,
+                        timestamp = summaryTs,
                         isContextSummary = true
                     )
                 )
@@ -229,12 +242,13 @@ class ContextCompactor @Inject constructor(
         onEvent(AgentEvent.CompactionFinished)
 
         val newMessages = mutableListOf<AgentMessage>()
-        // Codex 式布局：tail（保留的最近消息）在前，摘要收尾。
-        newMessages.addAll(tail)
+        // 摘要在前、tail（保留的最近消息）在后：让最后一条消息保持为用户请求 / tool 结果，
+        // 模型据此继续任务。摘要放末尾会让模型把它当成自己的上一轮、续写一大段后停下。
         newMessages.add(markerMessage)
         newMessages.add(compactedMessage)
+        newMessages.addAll(tail)
 
-        return newMessages
+        return CompactionResult(newMessages, compacted = true)
     }
 
     /**
