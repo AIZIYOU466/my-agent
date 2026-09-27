@@ -1,9 +1,0 @@
-AiCode 是一款面向 Android 的 AI 编程工具。内置终端模拟器、Linux 容器（PRoot）与 Git 集成，可连接 Anthropic、OpenAI 或任意兼容 OpenAI 协议的 API 供应商，在设备上直接生成、审查与执行代码。
-
-主要特性：
-* 基于 Termux 组件的内置终端
-* 通过 PRoot 运行 Linux 容器环境（Alpine / Ubuntu / Debian）
-* Git 仓库管理与可视化提交历史
-* 多供应商模型支持与用量统计
-* 远程 SSH 连接与 SFTP 文件访问
-* MCP（Model Context Protocol）客户端支持

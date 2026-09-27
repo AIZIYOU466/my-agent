@@ -1,9 +1,0 @@
-AiCode is an AI-powered coding tool for Android. It embeds a terminal emulator, a Linux container (PRoot) and Git integration, and connects to Anthropic, OpenAI or any OpenAI-compatible API vendor to generate, review and execute code directly on the device.
-
-Features:
-* Built-in terminal with Termux components
-* Linux container environment (Alpine/Ubuntu/Debian) via PRoot
-* Git repository management and visual commit history
-* Multi-vendor model support with cost tracking
-* Remote SSH server and SFTP file access
-* MCP (Model Context Protocol) client support

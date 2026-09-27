@@ -1,1 +1,0 @@
-AI coding agent with terminal, Linux container and Git
