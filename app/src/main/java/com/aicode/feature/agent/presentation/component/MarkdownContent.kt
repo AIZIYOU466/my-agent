@@ -19,6 +19,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -179,6 +181,19 @@ internal fun MarkdownContent(
     val baseTransformer = LocalMarkdownImageTransformer.current
     val mathTransformer = remember(baseTransformer, body.fontSize.value) {
         MathImageTransformer(baseTransformer, body.fontSize.value)
+    }
+
+    // 后台预热本条消息里的所有 LaTeX 公式：在 item 首次组合时就把 measure+render 摆到后台算好
+    // 写缓存，等快速 fling 掠过时主线程 getOrMeasure 直接命中、不再同步 build drawable（实测单
+    // 次高达 113ms，是 fling 抽搐的直接根因）。
+    val density = LocalDensity.current
+    val textSizePx = with(density) { body.fontSize.toPx() }
+    val colorArgb = color.toArgb()
+    LaunchedEffect(processed, textSizePx, colorArgb) {
+        if (!processed.contains("aicode-math-")) return@LaunchedEffect
+        withContext(Dispatchers.Default) {
+            MathImageTransformer.prewarm(processed, textSizePx, colorArgb)
+        }
     }
 
     androidx.compose.runtime.CompositionLocalProvider(
