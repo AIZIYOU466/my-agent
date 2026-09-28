@@ -608,6 +608,8 @@
     <string name="chat_tool_succeeded">工具执行成功</string>
     <string name="chat_tool_failed">工具执行失败</string>
     <string name="chat_tool_calls_count">%1$d 次工具调用</string>
+    <string name="chat_turn_running">执行中</string>
+    <string name="chat_turn_completed">已完成 %1$s</string>
     <string name="chat_context_usage">上下文已用 %1$d%%</string>
     <string name="chat_bg_command_done">后台命令已完成</string>
     <string name="chat_bg_commands_done">%1$d 个后台任务已完成</string>
@@ -633,6 +635,9 @@
     <string name="retry_error_unknown">网络异常</string>
     <string name="retry_error_with_code">%1$s (%2$d)</string>
     <string name="chat_thinking_process">思考过程</string>
+    <string name="chat_thinking_running_time">正在思考（耗时 %1$d 秒）</string>
+    <string name="chat_thinking_done_time">思考完成（耗时 %1$d 秒）</string>
+    <string name="chat_thinking_done">思考完成</string>
 
     <!-- Container Settings -->
     <string name="container_reset">重置</string>

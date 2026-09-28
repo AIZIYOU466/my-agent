@@ -65,6 +65,7 @@ import com.aicode.feature.agent.presentation.MessageRole
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.Check
 import compose.icons.feathericons.ChevronDown
+import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.ChevronUp
 import compose.icons.feathericons.Clock
 import compose.icons.feathericons.Copy
@@ -221,6 +222,8 @@ internal fun AgentMessageItem(
     contentSlice: String? = null,
     /** 是否为分块的首块（渲染思考块、顶部圆角）；非分块消息恒为 true。 */
     isChunkHeader: Boolean = true,
+    /** 是否渲染本条消息自带的思考块。默认 true；整轮折叠把思考抽出为独立过程项时传 false，避免重复。 */
+    reasoningVisible: Boolean = true,
     /** 是否为分块的末块（渲染操作行、底部圆角、与下一条列表 item 的间距）；非分块消息恒为 true。 */
     isChunkFooter: Boolean = true,
 ) {
@@ -296,7 +299,7 @@ internal fun AgentMessageItem(
             .padding(bottom = if (isChunkFooter) Spacing.sm else 0.dp),
         verticalArrangement = Arrangement.spacedBy(Spacing.xs)
     ) {
-        if (hasReasoning && isChunkHeader) {
+        if (hasReasoning && isChunkHeader && reasoningVisible) {
             // 思考默认收起：折叠行只占一行（显示思考的第一行），要看全文手动点开
             ReasoningBubble(text = message.reasoning.orEmpty(), cache = markdownCache)
         }
@@ -466,14 +469,14 @@ internal fun AgentMessageItem(
                         }
                         // 助手消息的复制按钮排在「更多选项」左边（统计信息之后）
                         if (!isUser && actionsVisible && hasContent) {
-                            if (emitted) Spacer(Modifier.width(Spacing.sm))
+                            if (emitted) Spacer(Modifier.width(Spacing.xs))
                             copyButton()
                             emitted = true
                         }
                         // 「更多选项」排在这一行的**最后**：助手消息里它跟在复制按钮后面（先给信息，
                         // 再给操作入口）；用户消息没有统计项，它自然接着回退按钮，间距与按钮组一致。
                         if (actionsVisible && onMoreClick != null) {
-                            if (emitted) Spacer(Modifier.width(if (isUser) Spacing.xs else Spacing.sm))
+                            if (emitted) Spacer(Modifier.width(Spacing.xs))
                             MessageActionIconButton(
                                 icon = FeatherIcons.MoreHorizontal,
                                 contentDescription = stringResource(R.string.chat_more_options),
@@ -495,6 +498,55 @@ internal fun AgentMessageItem(
     }
 }
 
+/**
+ * 整轮任务折叠头（最外层）：一行「执行中 / 已完成 Xs + 箭头」，点一下展开/收起整轮过程。
+ *
+ * 收起态用右箭头（ChevronRight），展开态用下箭头（ChevronDown）——与参考图一致；
+ * 运行中（[running]）只显示「执行中」，完成后显示本轮耗时。风格对齐 [ToolCallGroupHeader]。
+ */
+@Composable
+internal fun TurnCollapseHeader(
+    running: Boolean,
+    durationMs: Long?,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .heightIn(min = ChatStyle.toolRowMinHeight)
+            .clip(RoundedCornerShape(ChatStyle.panelCorner))
+            .clickable(
+                onClickLabel = stringResource(
+                    if (expanded) R.string.common_collapse_action else R.string.common_expand
+                ),
+                onClick = onToggle
+            ),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = if (running) {
+                stringResource(R.string.chat_turn_running)
+            } else {
+                stringResource(R.string.chat_turn_completed, durationMs?.let { formatTaskDuration(it) } ?: "")
+            },
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Icon(
+            imageVector = if (expanded) FeatherIcons.ChevronDown else FeatherIcons.ChevronRight,
+            contentDescription = if (expanded) stringResource(R.string.common_collapse_action) else stringResource(R.string.common_expand),
+            tint = Brand.IconGray,
+            modifier = Modifier.size(18.dp)
+        )
+    }
+}
+
 @Composable
 private fun MessageActionIconButton(
     icon: ImageVector,
@@ -504,7 +556,7 @@ private fun MessageActionIconButton(
 ) {
     IconButton(
         onClick = onClick,
-        modifier = Modifier.size(28.dp),
+        modifier = Modifier.size(24.dp),
         colors = IconButtonDefaults.iconButtonColors(contentColor = tint),
     ) {
         Icon(icon, contentDescription = contentDescription, modifier = Modifier.size(14.dp))

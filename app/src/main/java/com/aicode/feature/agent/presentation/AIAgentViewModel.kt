@@ -185,6 +185,13 @@ class AIAgentViewModel @Inject constructor(
     private val _agentStates = MutableStateFlow<Map<String, AgentUIState>>(emptyMap())
     val agentStates: StateFlow<Map<String, AgentUIState>> = _agentStates.asStateFlow()
 
+    /**
+     * 各会话「最后一轮是否正常完成」：只有正常收尾（收到完成标记）才在轮末回复下挂「复制 / 更多」
+     * 按钮；主动暂停 / 出错 / 未开始都不挂，避免按钮挂在半截输出上。
+     */
+    private val _completedSessions = MutableStateFlow<Set<String>>(emptySet())
+    val completedSessions: StateFlow<Set<String>> = _completedSessions.asStateFlow()
+
     val agentState: StateFlow<AgentUIState> = _currentSessionId
         .flatMapLatest { id ->
             if (id == null) flowOf(AgentUIState.Idle)
@@ -269,6 +276,31 @@ class AIAgentViewModel @Inject constructor(
     /** 记录一次手动展开/收起（取值由调用方按当前可见态取反后传入）。 */
     fun setToolExpanded(key: String, expanded: Boolean) {
         toolExpansionOverrides[key] = expanded
+    }
+
+    /**
+     * 整轮任务折叠（外层「执行中 / 已完成」头）的手动展开态：key = `turn:<轮首消息 id>`。
+     *
+     * 与 [toolExpansionOverrides] 同款：按 App 进程内存保留、不落盘。没记录时按「末轮运行中默认展开、
+     * 其余默认收起」推默认值（见 AIChatPanel.buildChatItems 的 activeTurnKey）；一旦用户手动点过，
+     * 就以其选择为准，任务完成自动收起也不会覆盖它。
+     */
+    val turnExpansionOverrides = mutableStateMapOf<String, Boolean>()
+
+    /** 记录一次整轮折叠的手动展开/收起。 */
+    fun setTurnExpanded(key: String, expanded: Boolean) {
+        turnExpansionOverrides[key] = expanded
+    }
+
+    /**
+     * 思考过程展开态的手动选择：key = 助手消息 id。与 [toolExpansionOverrides] 同款（进程内存、不落盘），
+     * 使思考卡片划出视口回收、切页返回后仍保持展开/收起。
+     */
+    val reasoningExpansionOverrides = mutableStateMapOf<String, Boolean>()
+
+    /** 记录一次思考卡片的展开/收起。 */
+    fun setReasoningExpanded(messageId: String, expanded: Boolean) {
+        reasoningExpansionOverrides[messageId] = expanded
     }
 
     fun loadMoreMessages() {
@@ -1684,6 +1716,7 @@ class AIAgentViewModel @Inject constructor(
             val finishedState = _agentStates.value[sessionId]
             if (!failed && (finishedState is AgentUIState.Loading || finishedState is AgentUIState.Streaming)) {
                 setAgentState(sessionId, AgentUIState.Result(WorkflowStatus.SUCCESS))
+                _completedSessions.value = _completedSessions.value + sessionId
             }
             setStreamingText(sessionId, null)
 
@@ -1695,11 +1728,13 @@ class AIAgentViewModel @Inject constructor(
                 (cancelledState is AgentUIState.Loading || cancelledState is AgentUIState.Streaming)
             ) {
                 setAgentState(sessionId, AgentUIState.Idle)
+                _completedSessions.value = _completedSessions.value - sessionId
             }
             throw e
         } catch (e: Exception) {
              FileLogger.e(TAG, "executeAgentRequestStream 失败: request=$request", e)
              setAgentState(sessionId, AgentUIState.Error(e.toUserMessage()))
+             _completedSessions.value = _completedSessions.value - sessionId
         } finally {
             val isOwnJob = sessionJobs[sessionId] == coroutineContext[Job]
             FileLogger.d(TAG, "stream finally: sid=$sessionId isOwnJob=$isOwnJob state=${_agentStates.value[sessionId]}")
