@@ -377,7 +377,7 @@ internal fun AgentMessageItem(
                 }
                 // 气泡下方的元信息行（工具消息不显示）：用户消息每条都常驻「时间 + 复制/回退/更多」，
                 // 助手消息只挂整段会话最新的一条，避免每条回复下面都吊一排按钮把聊天记录割碎。
-                // 排列固定为「复制 → 统计（用量/缓存/耗时）→ 更多选项」：信息在前，操作入口收在行尾。
+                // 排列固定为「统计（用量/缓存/耗时）→ 复制 → 更多选项」：信息在前，操作入口收在行尾。
                 //
                 // 用量与耗时按**本轮合计**（1 轮 n 步的所有调用求和）挂在轮末那条助手消息上：
                 // 逐步显示会把一次任务的开销拆成碎片，中间步骤的数字对用户也没有意义。
@@ -406,24 +406,26 @@ internal fun AgentMessageItem(
                             ChatMetaText(text = formatClockTime(message.timestamp))
                             emitted = true
                         }
-                        if (actionsVisible) {
-                            if (emitted) Spacer(Modifier.width(Spacing.xs))
-                            if (hasContent) {
-                                MessageActionIconButton(
-                                    icon = if (copied) FeatherIcons.Check else FeatherIcons.Copy,
-                                    contentDescription = if (copied) stringResource(R.string.chat_copied) else stringResource(R.string.chat_copy),
-                                    tint = iconTint,
-                                    onClick = {
-                                        copyScope.launch {
-                                            clipboard.setClipEntry(
-                                                ClipEntry(ClipData.newPlainText("message", message.content))
-                                            )
-                                            copied = true
-                                        }
+                        val copyButton: @Composable () -> Unit = {
+                            MessageActionIconButton(
+                                icon = if (copied) FeatherIcons.Check else FeatherIcons.Copy,
+                                contentDescription = if (copied) stringResource(R.string.chat_copied) else stringResource(R.string.chat_copy),
+                                tint = iconTint,
+                                onClick = {
+                                    copyScope.launch {
+                                        clipboard.setClipEntry(
+                                            ClipEntry(ClipData.newPlainText("message", message.content))
+                                        )
+                                        copied = true
                                     }
-                                )
-                            }
-                            if (isUser && onRewindClick != null) {
+                                }
+                            )
+                        }
+                        // 用户消息：复制紧跟时间戳，回退按钮在其后（保持原顺序）
+                        if (isUser && actionsVisible) {
+                            if (emitted) Spacer(Modifier.width(Spacing.xs))
+                            if (hasContent) copyButton()
+                            if (onRewindClick != null) {
                                 MessageActionIconButton(
                                     icon = FeatherIcons.RotateCcw,
                                     contentDescription = stringResource(R.string.checkpoint_rewind_title),
@@ -462,7 +464,13 @@ internal fun AgentMessageItem(
                             ChatMetaText(text = durationText)
                             emitted = true
                         }
-                        // 「更多选项」排在这一行的**最后**：助手消息里它跟在用量/耗时后面（先给信息，
+                        // 助手消息的复制按钮排在「更多选项」左边（统计信息之后）
+                        if (!isUser && actionsVisible && hasContent) {
+                            if (emitted) Spacer(Modifier.width(Spacing.sm))
+                            copyButton()
+                            emitted = true
+                        }
+                        // 「更多选项」排在这一行的**最后**：助手消息里它跟在复制按钮后面（先给信息，
                         // 再给操作入口）；用户消息没有统计项，它自然接着回退按钮，间距与按钮组一致。
                         if (actionsVisible && onMoreClick != null) {
                             if (emitted) Spacer(Modifier.width(if (isUser) Spacing.xs else Spacing.sm))
