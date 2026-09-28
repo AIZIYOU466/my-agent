@@ -138,11 +138,24 @@ public final class TerminalView extends View {
             }
 
             @Override
+            public boolean onScaleBegin() {
+                // Reset per-gesture so mScaleFactor is the cumulative factor since this pinch started.
+                mScaleFactor = 1f;
+                mClient.onScaleBegin();
+                return true;
+            }
+
+            @Override
             public boolean onScale(float focusX, float focusY, float scale) {
                 if (mEmulator == null || isSelectingText()) return true;
                 mScaleFactor *= scale;
                 mScaleFactor = mClient.onScale(mScaleFactor);
                 return true;
+            }
+
+            @Override
+            public void onScaleEnd() {
+                mClient.onScaleEnd();
             }
 
             @Override

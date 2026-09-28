@@ -14,6 +14,7 @@ import com.termux.terminal.TerminalSession
 import com.termux.terminal.TerminalSessionClient
 import com.termux.view.TerminalView
 import com.termux.view.TerminalViewClient
+import kotlin.math.roundToInt
 
 /**
  * 由额外按键行（Esc/Ctrl/Alt 等）驱动的虚拟修饰键状态。
@@ -100,13 +101,35 @@ class AppTerminalSessionClient(
 class AppTerminalViewClient(
     private val context: Context,
     private val viewProvider: () -> TerminalView?,
-    private val modifiers: TerminalKeyModifiers
+    private val modifiers: TerminalKeyModifiers,
+    private val currentFontSizeSp: () -> Int,
+    private val onFontSizePreview: (Int) -> Unit,
+    private val onFontSizeCommit: () -> Unit
 ) : TerminalViewClient {
 
-    private companion object { const val TAG = "TerminalView" }
+    private companion object {
+        const val TAG = "TerminalView"
+        const val MIN_FONT_SP = 10
+        const val MAX_FONT_SP = 22
+    }
 
-    // 暂不支持双指缩放字号：原样返回，不改变字号。
-    override fun onScale(scale: Float): Float = scale
+    private var baseFontSizeSp = 0
+
+    override fun onScaleBegin() {
+        baseFontSizeSp = currentFontSizeSp()
+    }
+
+    // 跟手连续缩放：scale 是本次手势从 1 起的累计倍数，乘手势起始字号得到目标字号。
+    // 实时只更新预览（不落盘），手势结束由 onScaleEnd 统一持久化。
+    override fun onScale(scale: Float): Float {
+        val target = (baseFontSizeSp * scale).roundToInt().coerceIn(MIN_FONT_SP, MAX_FONT_SP)
+        onFontSizePreview(target)
+        return scale
+    }
+
+    override fun onScaleEnd() {
+        onFontSizeCommit()
+    }
 
     override fun onSingleTapUp(e: MotionEvent?) {
         val view = viewProvider() ?: return

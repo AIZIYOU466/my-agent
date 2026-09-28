@@ -399,6 +399,9 @@ private fun TerminalSurface(
 ) {
     val preset = settings.theme
     val bgColor = Color(preset.background)
+    // 字号单一事实源：捏合缩放只改这里（预览），手势结束才落盘；设置面板的改动反向同步进来。
+    var liveFontSizeSp by remember { mutableIntStateOf(settings.fontSizeSp) }
+    LaunchedEffect(settings.fontSizeSp) { liveFontSizeSp = settings.fontSizeSp }
 
     AndroidView(
         modifier = Modifier
@@ -408,14 +411,17 @@ private fun TerminalSurface(
             val view = TerminalView(ctx, null)
             view.setBackgroundColor(preset.background)
             val density = ctx.resources.displayMetrics.density
-            view.setTextSize((settings.fontSizeSp * density).toInt())
+            view.setTextSize((liveFontSizeSp * density).toInt())
             view.setTypeface(TerminalFontManager.loadTypeface(ctx, settings.fontPath) ?: Typeface.MONOSPACE)
-            view.tag = (settings.fontSizeSp * density).toInt() to settings.fontPath
+            view.tag = (liveFontSizeSp * density).toInt() to settings.fontPath
             view.setTerminalViewClient(
                 AppTerminalViewClient(
                     context = ctx,
                     viewProvider = { view },
-                    modifiers = viewModel.modifiers
+                    modifiers = viewModel.modifiers,
+                    currentFontSizeSp = { liveFontSizeSp },
+                    onFontSizePreview = { liveFontSizeSp = it },
+                    onFontSizeCommit = { viewModel.setFontSize(liveFontSizeSp) }
                 )
             )
             view.isFocusable = true
@@ -430,7 +436,7 @@ private fun TerminalSurface(
         update = { view ->
             view.setBackgroundColor(preset.background)
             val density = view.context.resources.displayMetrics.density
-            val targetTextSize = (settings.fontSizeSp * density).toInt()
+            val targetTextSize = (liveFontSizeSp * density).toInt()
             val targetFontKey = targetTextSize to settings.fontPath
             if (view.tag != targetFontKey) {
                 view.setTextSize(targetTextSize)
