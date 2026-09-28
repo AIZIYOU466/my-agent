@@ -832,18 +832,6 @@ fun ProviderEditorScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.weight(1f)
                             )
-                            if (models.isNotEmpty()) {
-                                TextButton(
-                                    onClick = { isSelectionMode = true },
-                                    colors = ButtonDefaults.textButtonColors(
-                                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                ) {
-                                    Icon(FeatherIcons.CheckSquare, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(Spacing.xs))
-                                    Text(stringResource(R.string.provider_models_select))
-                                }
-                            }
                             TextButton(
                                 onClick = {
                                     fetchDialogKey++

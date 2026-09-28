@@ -962,7 +962,7 @@
 
     <!-- Skills Settings -->
     <string name="skills_empty">还没有安装技能</string>
-    <string name="skills_empty_hint">点右上角「+」新建或导入，也可把含 SKILL.md 的目录放进 ~/.aicode/skills/</string>
+    <string name="skills_empty_hint">点右上角「+」新建或导入</string>
     <string name="skills_no_project_skills">当前项目暂无技能</string>
     <string name="skills_no_global_skills">暂无全局技能</string>
     <string name="skills_enable">是否启用</string>
