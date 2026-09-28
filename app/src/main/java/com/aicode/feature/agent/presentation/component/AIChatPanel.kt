@@ -97,6 +97,7 @@ import compose.icons.feathericons.ArrowDown
 import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 
@@ -1142,11 +1143,21 @@ fun AIChatPanel(
     // 「展开后底部被输入框挡一点」难接受得多，整段重定位逻辑去掉。
     val onToolItemToggled: () -> Unit = { followBottom = false }
 
-    val firstVisibleItemIndex by remember { derivedStateOf { listState.firstVisibleItemIndex } }
-    LaunchedEffect(firstVisibleItemIndex, messagesReady, messagesState.hasMore, messagesState.isLoadingMore) {
-        if (messagesReady && firstVisibleItemIndex <= 3 && messagesState.hasMore && !messagesState.isLoadingMore) {
-            viewModel.loadMoreMessages()
-        }
+    // 顶部快到头时加载更多历史。绝不能把 firstVisibleItemIndex 作为组合期读取的 effect key：
+    // fling 中 index 每跨一个 item 就变一次，会让整个 AIChatPanel 大函数随之重组、连带全部可见
+    // item 重组，是快速滚动掉帧（进而 fling 补偿跳变、抽搐）的主要放大器。改为在协程内用
+    // snapshotFlow 观察 index，组合体完全不读它。
+    val latestMessagesState = rememberUpdatedState(messagesState)
+    LaunchedEffect(listState, messagesReady) {
+        if (!messagesReady) return@LaunchedEffect
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .distinctUntilChanged()
+            .collect { index ->
+                val ms = latestMessagesState.value
+                if (index <= 3 && ms.hasMore && !ms.isLoadingMore) {
+                    viewModel.loadMoreMessages()
+                }
+            }
     }
 
     val executionMode = settingsViewModel?.executionMode?.collectAsStateWithLifecycle()?.value

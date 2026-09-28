@@ -40,6 +40,29 @@ import ru.noties.jlatexmath.JLatexMathDrawable
  * @param delegate 处理非数学图片链接的下游 transformer（通常是本地图片渲染器或 NoOp）。
  * @param baseTextSizeSp 行内公式的基准字号（sp），与所在文本正文字号对齐。
  */
+/**
+ * 公式排版尺寸的进程级缓存。measure 需要构建 [JLatexMathDrawable]（解析 TeX + 排版），
+ * 是主线程上的重活。LazyColumn 里公式 item 滚出视口会被 dispose，仅靠 Composable 内的
+ * remember 缓存，滚回来重新组合就得再算一遍——快速 fling 时反复进出反复排版造成卡顿。
+ * 这里按 (latex, textSizePx) 做进程级缓存，同一公式只排版测量一次。
+ */
+private object LatexMeasureCache {
+    private data class Key(val latex: String, val textSizePx: Float)
+
+    // 上限取得大：每条只存一个 android.util.Size（两个 int），内存可忽略；而 fling 快速滚过
+    // 长历史时，上限太小会把旧公式挤掉、导致滚回去又在主线程重新排版。512 足够盖住常见会话。
+    private const val MAX = 512
+    private val sizes = object : LinkedHashMap<Key, android.util.Size>(MAX, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Key, android.util.Size>?): Boolean = size > MAX
+    }
+
+    fun getOrMeasure(latex: String, textSizePx: Float, measure: () -> android.util.Size): android.util.Size =
+        synchronized(sizes) {
+            val key = Key(latex, textSizePx)
+            sizes[key] ?: measure().also { sizes[key] = it }
+        }
+}
+
 private object LatexBitmapCache {
     private data class Key(
         val link: String,
@@ -88,7 +111,7 @@ internal class MathImageTransformer(
         // 首次组合时同步取得真实尺寸，避免用字符长度估算造成公式忽大忽小、宽度过大时
         // 从中间开始显示。尺寸一旦确定就不再异步替换，因此不会改写 LazyColumn 锚点。
         val layoutSize = remember(link, textSizePx) {
-            measureLatex(latex, textSizePx)
+            LatexMeasureCache.getOrMeasure(latex, textSizePx) { measureLatex(latex, textSizePx) }
         }
         val renderTask = remember(link, colorArgb, textSizePx) {
             LatexBitmapCache.getOrStartBitmap(link, colorArgb, textSizePx) {
