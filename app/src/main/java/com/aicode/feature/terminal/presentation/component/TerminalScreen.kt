@@ -420,8 +420,10 @@ private fun TerminalSurface(
                     viewProvider = { view },
                     modifiers = viewModel.modifiers,
                     currentFontSizeSp = { liveFontSizeSp },
-                    onFontSizePreview = { liveFontSizeSp = it },
-                    onFontSizeCommit = { viewModel.setFontSize(liveFontSizeSp) }
+                    onFontSizeCommit = { sp ->
+                        liveFontSizeSp = sp
+                        viewModel.setFontSize(sp)
+                    }
                 )
             )
             view.isFocusable = true

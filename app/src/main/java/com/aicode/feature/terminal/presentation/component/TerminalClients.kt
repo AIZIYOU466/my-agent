@@ -103,32 +103,37 @@ class AppTerminalViewClient(
     private val viewProvider: () -> TerminalView?,
     private val modifiers: TerminalKeyModifiers,
     private val currentFontSizeSp: () -> Int,
-    private val onFontSizePreview: (Int) -> Unit,
-    private val onFontSizeCommit: () -> Unit
+    private val onFontSizeCommit: (Int) -> Unit
 ) : TerminalViewClient {
 
     private companion object {
         const val TAG = "TerminalView"
-        const val MIN_FONT_SP = 10
+        const val MIN_FONT_SP = 5
         const val MAX_FONT_SP = 22
     }
 
     private var baseFontSizeSp = 0
+    private var accumulatedScale = 1f
+    private var lastFontSizeSp = 0
 
     override fun onScaleBegin() {
         baseFontSizeSp = currentFontSizeSp()
+        accumulatedScale = 1f
+        lastFontSizeSp = baseFontSizeSp
     }
 
-    // 跟手连续缩放：scale 是本次手势从 1 起的累计倍数，乘手势起始字号得到目标字号。
-    // 实时只更新预览（不落盘），手势结束由 onScaleEnd 统一持久化。
+    // 捏合：累积增量倍数得到目标字号（钳在 10–22），返回等价预览缩放倍数给视图做画布缩放。
+    // 这里不改字号、不 resize PTY（避免给 shell 连发 SIGWINCH 导致内容错乱），
+    // 手势结束在 onScaleEnd 按最终字号 resize 一次。
     override fun onScale(scale: Float): Float {
-        val target = (baseFontSizeSp * scale).roundToInt().coerceIn(MIN_FONT_SP, MAX_FONT_SP)
-        onFontSizePreview(target)
-        return scale
+        accumulatedScale *= scale
+        val target = (baseFontSizeSp * accumulatedScale).roundToInt().coerceIn(MIN_FONT_SP, MAX_FONT_SP)
+        lastFontSizeSp = target
+        return if (baseFontSizeSp > 0) target.toFloat() / baseFontSizeSp else 1f
     }
 
     override fun onScaleEnd() {
-        onFontSizeCommit()
+        if (lastFontSizeSp != baseFontSizeSp) onFontSizeCommit(lastFontSizeSp)
     }
 
     override fun onSingleTapUp(e: MotionEvent?) {
