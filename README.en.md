@@ -51,6 +51,7 @@ There is nothing to set up beforehand: install the app, configure a model under 
 | Icon | Description |
 |------|-------------|
 | <img src="https://www.rainyun.com/favicon.ico" width="24" alt="RainYun" /> | **[RainYun](https://www.rainyun.com/logins_)** — Sponsor of this project's server; a Chinese cloud provider specializing in VPS and game hosting (one-click Minecraft and other game servers), plus bare-metal machines and object storage; discounts for new users |
+| <img src="https://ai.onyxaxis.org/api/site/logo" width="24" alt="Axis AI" /> | **[Axis AI](https://ai.onyxaxis.org/register?invite=AICODE)** — A free non-profit AI platform offering frontier models; register with invite code `AICODE` for 7 days of Go benefits |
 
 ## Advertisement
 
