@@ -1,4 +1,5 @@
 <p align="center">
+  <img src="docs/icon.webp" width="112" alt="AiCode" />
   <h1 align="center">AiCode</h1>
   <p align="center">
     Universal AI Coding Agent for Android · Linux dev environment · Local & remote SSH
@@ -10,11 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0-blue.svg" alt="License GPL-3.0" /></a>
   <img src="https://img.shields.io/badge/Platform-Android-green.svg" alt="Android Platform" />
-  <img src="https://img.shields.io/badge/Language-Kotlin-purple.svg" alt="Kotlin" />
-  <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4.svg" alt="Jetpack Compose UI" />
-  <img src="https://img.shields.io/badge/MinSDK-26-orange.svg" alt="Min SDK 26 (Android 8.0)" />
   <a href="https://github.com/jieapi/aicode/releases"><img src="https://img.shields.io/github/v/release/jieapi/aicode?display_name=tag&include_prereleases" alt="Latest Release" /></a>
-  <a href="https://github.com/jieapi/aicode/releases"><img src="https://img.shields.io/github/downloads/jieapi/aicode/total" alt="Total Downloads" /></a>
 </p>
 
 <p align="center">
