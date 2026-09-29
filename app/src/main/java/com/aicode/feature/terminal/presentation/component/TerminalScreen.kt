@@ -79,7 +79,7 @@ import com.termux.view.TerminalView
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ArrowLeft
 import compose.icons.feathericons.Plus
-import compose.icons.feathericons.Tool
+import compose.icons.feathericons.Settings
 import compose.icons.feathericons.X
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filterNotNull
@@ -124,7 +124,7 @@ fun TerminalScreen(
                 },
                 actions = {
                     IconButton(onClick = { showToolsSheet = true }) {
-                        Icon(FeatherIcons.Tool, contentDescription = stringResource(R.string.terminal_tools_title))
+                        Icon(FeatherIcons.Settings, contentDescription = stringResource(R.string.terminal_settings_title))
                     }
                 }
             )
@@ -191,11 +191,6 @@ fun TerminalScreen(
         if (showToolsSheet) {
             TerminalSettingsSheet(
                 settings = terminalSettings,
-                showEnvTool = !viewModel.isRemoteMode,
-                onRunInstaller = {
-                    showToolsSheet = false
-                    viewModel.runEnvInstaller()
-                },
                 onDismiss = { showToolsSheet = false },
                 onSelectTheme = { viewModel.setTheme(it) },
                 onChangeFontSize = { viewModel.setFontSize(it) },

@@ -1313,10 +1313,6 @@
 
     <!-- Terminal Settings & Themes -->
     <string name="terminal_settings_title">Terminal Settings</string>
-    <string name="terminal_tools_title">Terminal Tools</string>
-    <string name="terminal_tools_env_section">Environment Tools</string>
-    <string name="terminal_tools_run_installer">Re-run environment setup</string>
-    <string name="terminal_tools_run_installer_desc">Open the dependency installer in a new tab and install development dependencies such as Node.js, Python, Java or Go by scenario</string>
     <string name="terminal_theme_title">Color Theme</string>
     <string name="terminal_font_size_title">Font Size</string>
     <string name="terminal_cursor_style_title">Cursor Style</string>
