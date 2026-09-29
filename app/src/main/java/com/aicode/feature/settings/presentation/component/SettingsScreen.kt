@@ -1049,8 +1049,6 @@ fun SettingsScreen(
     if (showTerminalSettingsSheet) {
         TerminalSettingsSheet(
             settings = terminalSettings,
-            showEnvTool = false,
-            onRunInstaller = {},
             onDismiss = { showTerminalSettingsSheet = false },
             onSelectTheme = { viewModel.setTerminalTheme(it) },
             onChangeFontSize = { viewModel.setTerminalFontSize(it) },

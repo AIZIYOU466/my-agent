@@ -1312,10 +1312,6 @@
 
     <!-- Terminal Settings & Themes -->
     <string name="terminal_settings_title">终端设置</string>
-    <string name="terminal_tools_title">终端工具</string>
-    <string name="terminal_tools_env_section">环境工具</string>
-    <string name="terminal_tools_run_installer">重新运行环境安装</string>
-    <string name="terminal_tools_run_installer_desc">在新标签中打开依赖安装工具，按场景安装 Node.js、Python、Java、Go 等开发依赖</string>
     <string name="terminal_theme_title">配色主题</string>
     <string name="terminal_font_size_title">字体大小</string>
     <string name="terminal_cursor_style_title">光标样式</string>
