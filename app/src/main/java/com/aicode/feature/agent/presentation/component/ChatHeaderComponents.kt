@@ -34,9 +34,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.aicode.R
 import com.aicode.core.theme.Radius
 import com.aicode.core.theme.Spacing
+import com.aicode.core.theme.semanticColors
 import com.aicode.feature.agent.domain.model.AgentMode
 import com.aicode.feature.onboarding.domain.OnboardingStep
 import com.aicode.feature.onboarding.presentation.onboardingTarget
@@ -286,43 +288,35 @@ internal fun WelcomeState(
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(Spacing.sm),
-            // 底部悬浮输入框占据大量空间，纯居中会显得偏下；整体上移 13% 屏高，让重心落在顶栏与输入框之间的空白正中
-            modifier = Modifier.offset(y = -(maxHeight * 0.13f))
+            // 底部悬浮输入框占据大量空间，纯居中会显得偏下；整体上移 8% 屏高，让重心落在顶栏与输入框之间的空白正中
+            modifier = Modifier.offset(y = -(maxHeight * 0.08f))
         ) {
-            // 用 Compose 直接绘制品牌图标，绕开 adaptive-icon 资源无法经 painterResource 加载的限制
-            Box(
-                modifier = Modifier
-                    .size(72.dp)
-                    .clip(RoundedCornerShape(Radius.xl))
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(
-                                Color(0xFFFFC93C),
-                                Color(0xFFF57C00)
-                            )
+            // 超大、超轻的品牌字作视觉锚点，配橙红渐变，克制不抢眼
+            Text(
+                text = "ya",
+                style = MaterialTheme.typography.displayMedium.copy(
+                    fontWeight = FontWeight.Thin,
+                    letterSpacing = 6.sp,
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color(0xFFFFA94D),
+                            Color(0xFFFF5E5B)
                         )
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "ya",
-                    color = Color.White,
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
+                    )
                 )
-            }
-            Spacer(Modifier.height(Spacing.lg))
+            )
+            Spacer(Modifier.height(Spacing.xl))
             Text(
                 text = stringResource(R.string.chat_placeholder),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onBackground
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-            Spacer(Modifier.height(Spacing.md))
+            Spacer(Modifier.height(Spacing.sm))
             Text(
                 text = stringResource(R.string.chat_input_hint),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.semanticColors.subtleText
             )
         }
     }
