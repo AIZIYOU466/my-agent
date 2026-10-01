@@ -3,14 +3,13 @@ name: Build APK
 on:
   push:
     branches: [ main ]
+    tags:
+      - 'v*'
     paths-ignore:
       - '**.md'
       - 'docs/**'
       - 'LICENSE'
       - '.gitignore'
-  push:
-    tags:
-      - 'v*'
   workflow_dispatch:
 
 concurrency:
