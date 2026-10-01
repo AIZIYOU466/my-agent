@@ -1,6 +1,5 @@
 package com.aicode.feature.agent.presentation.component
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -28,8 +27,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -289,13 +289,28 @@ internal fun WelcomeState(
             // 底部悬浮输入框占据大量空间，纯居中会显得偏下；整体上移 13% 屏高，让重心落在顶栏与输入框之间的空白正中
             modifier = Modifier.offset(y = -(maxHeight * 0.13f))
         ) {
-            Image(
-                painter = painterResource(R.mipmap.ic_launcher),
-                contentDescription = null,
+            // 用 Compose 直接绘制品牌图标，绕开 adaptive-icon 资源无法经 painterResource 加载的限制
+            Box(
                 modifier = Modifier
                     .size(72.dp)
                     .clip(RoundedCornerShape(Radius.xl))
-            )
+                    .background(
+                        Brush.linearGradient(
+                            colors = listOf(
+                                Color(0xFFFFC93C),
+                                Color(0xFFF57C00)
+                            )
+                        )
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "ya",
+                    color = Color.White,
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
             Spacer(Modifier.height(Spacing.lg))
             Text(
                 text = stringResource(R.string.chat_placeholder),
