@@ -479,7 +479,7 @@ class SettingsViewModel @Inject constructor(
     private val _startupSessionMode = MutableStateFlow(StartupSessionMode.NEW_SESSION)
     val startupSessionMode: StateFlow<StartupSessionMode> = _startupSessionMode.asStateFlow()
 
-    private val _firstByteTimeoutSec = MutableStateFlow(300)
+    private val _firstByteTimeoutSec = MutableStateFlow(120)
     val firstByteTimeoutSec: StateFlow<Int> = _firstByteTimeoutSec.asStateFlow()
 
     private val _streamIdleTimeoutSec = MutableStateFlow(0)

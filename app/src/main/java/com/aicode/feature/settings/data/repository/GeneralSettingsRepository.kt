@@ -50,7 +50,7 @@ class GeneralSettingsRepository @Inject constructor(
         val DELETE_EXTERNAL_WORKSPACE_SESSIONS_KEY = booleanPreferencesKey("delete_external_workspace_sessions")
 
         /** 首字超时默认 5 分钟，与原硬编码值一致。 */
-        const val DEFAULT_FIRST_BYTE_TIMEOUT_SEC = 300
+        const val DEFAULT_FIRST_BYTE_TIMEOUT_SEC = 120
 
         /** 网络重试次数默认 6，与原硬编码值一致。 */
         const val DEFAULT_MAX_NETWORK_RETRIES = 6
