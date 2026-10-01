@@ -8,20 +8,26 @@
         android:pathData="M 36,26 L 72,26 Q 80,26 80,34 L 80,66 Q 80,74 72,74 L 50,74 L 42,84 L 46,74 L 36,74 Q 28,74 28,66 L 28,34 Q 28,26 36,26 Z"
         android:fillColor="#FFFFFF" />
     <path
-        android:pathData="M 41,40 L 46,50 M 51,40 L 46,50 M 46,50 L 42,62"
-        android:strokeColor="#FF6B35"
+        android:pathData="M 41,42 L 46,51 M 51,42 L 46,51 M 46,51 L 42,62"
+        android:strokeColor="#E55A2B"
         android:strokeWidth="2.5"
         android:strokeLineCap="round"
         android:strokeLineJoin="round" />
     <path
-        android:pathData="M 65,48 A 6,6 0 0,1 53,48 A 6,6 0 0,1 65,48"
-        android:strokeColor="#FF6B35"
+        android:pathData="M 64,50 A 5.5,5.5 0 1,1 53,50 A 5.5,5.5 0 1,1 64,50"
+        android:strokeColor="#E55A2B"
         android:strokeWidth="2.5"
         android:strokeLineCap="round"
         android:fillColor="#00000000" />
     <path
-        android:pathData="M 65,48 L 65,60"
-        android:strokeColor="#FF6B35"
+        android:pathData="M 64,45 L 64,55"
+        android:strokeColor="#E55A2B"
         android:strokeWidth="2.5"
         android:strokeLineCap="round" />
+    <path
+        android:pathData="M 73,32 m -1.5,0 a 1.5,1.5 0 1,0 3,0 a 1.5,1.5 0 1,0 -3,0"
+        android:fillColor="#E55A2B" />
+    <path
+        android:pathData="M 77,29 m -1,0 a 1,1 0 1,0 2,0 a 1,1 0 1,0 -2,0"
+        android:fillColor="#E55A2B" />
 </vector>
