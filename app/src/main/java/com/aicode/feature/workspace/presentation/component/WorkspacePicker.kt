@@ -4,8 +4,10 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -50,6 +52,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.aicode.core.theme.Radius
 import com.aicode.core.theme.Spacing
+import com.aicode.core.ui.pressScale
 import com.aicode.feature.workspace.domain.model.Workspace
 import com.aicode.feature.workspace.domain.model.WorkspaceType
 import com.aicode.feature.workspace.presentation.WorkspaceViewModel
@@ -74,11 +77,13 @@ fun WorkspaceChip(
     val current by viewModel.current.collectAsStateWithLifecycle()
     var showSheet by remember { mutableStateOf(false) }
 
+    val interactionSource = remember { MutableInteractionSource() }
     Row(
         modifier = modifier
+            .pressScale(interactionSource)
             .clip(RoundedCornerShape(Radius.pill))
             .background(MaterialTheme.colorScheme.primaryContainer)
-            .clickable { showSheet = true }
+            .clickable(interactionSource = interactionSource, onClick = { showSheet = true })
             .padding(horizontal = Spacing.md, vertical = Spacing.xs),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -429,6 +434,7 @@ private fun WorkspaceSheet(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun WorkspaceRow(
     workspace: Workspace,
@@ -443,11 +449,19 @@ private fun WorkspaceRow(
         WorkspaceType.INTERNAL -> "projects/${workspace.name}"
         WorkspaceType.EXTERNAL_LOCAL, WorkspaceType.REMOTE -> workspace.path
     }
+    val interactionSource = remember { MutableInteractionSource() }
     Row(
         modifier = Modifier
             .fillMaxWidth()
+            // animateItem：新建/删除工作区或切换时旧行平滑让位，而不是整列瞬时跳变。
+            .animateItem()
+            .pressScale(interactionSource, enabled = !disabled)
             .clip(RoundedCornerShape(Radius.sm))
-            .clickable(enabled = !disabled, onClick = onClick)
+            .clickable(
+                interactionSource = interactionSource,
+                enabled = !disabled,
+                onClick = onClick
+            )
             .padding(horizontal = Spacing.md, vertical = Spacing.md),
         verticalAlignment = Alignment.CenterVertically
     ) {

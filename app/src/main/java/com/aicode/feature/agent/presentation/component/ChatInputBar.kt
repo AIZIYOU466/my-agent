@@ -2,7 +2,9 @@ package com.aicode.feature.agent.presentation.component
 
 import android.content.ClipData
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -13,6 +15,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -697,6 +701,14 @@ internal fun SendButton(
     }
     val arcColor = buttonColor.copy(alpha = 0.85f)
     val clampedProgress = tokenProgress.coerceIn(0f, 1f)
+    // 按压缩放：点住时缩小、松开弹簧回弹，与底部 Tab 栏 tab-press-scale 同参数统一手感。
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.92f else 1f,
+        animationSpec = spring(stiffness = Spring.StiffnessMedium),
+        label = "send-press-scale"
+    )
     Box(
         modifier = Modifier
             .padding(Spacing.xs)
@@ -731,9 +743,17 @@ internal fun SendButton(
         Box(
             modifier = Modifier
                 .size(36.dp)
+                .graphicsLayer {
+                    scaleX = pressScale
+                    scaleY = pressScale
+                }
                 .clip(CircleShape)
                 .background(buttonColor)
-                .clickable(enabled = clickable, onClick = if (showStop) onStop else onSend),
+                .clickable(
+                    interactionSource = interactionSource,
+                    enabled = clickable,
+                    onClick = if (showStop) onStop else onSend
+                ),
             contentAlignment = Alignment.Center
         ) {
             if (showStop) {

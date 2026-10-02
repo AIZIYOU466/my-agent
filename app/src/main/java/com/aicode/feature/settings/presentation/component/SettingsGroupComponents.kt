@@ -3,6 +3,7 @@ package com.aicode.feature.settings.presentation.component
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import com.aicode.R
 import com.aicode.core.theme.Spacing
 import com.aicode.core.theme.semanticColors
+import com.aicode.core.ui.pressScale
 import compose.icons.FeatherIcons
 import compose.icons.feathericons.ChevronRight
 import compose.icons.feathericons.Search
@@ -143,9 +145,16 @@ internal fun SettingsRow(
     enabled: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    val interactionSource = remember { MutableInteractionSource() }
     val baseModifier = modifier
         .fillMaxWidth()
-        .let { if (onClick != null && enabled) it.clickable { onClick() } else it }
+        .let {
+            if (onClick != null && enabled) {
+                // pressScale 与 clickable 共用 interactionSource：按下反馈与点击命中同步。
+                it.pressScale(interactionSource)
+                    .clickable(interactionSource = interactionSource, onClick = { onClick() })
+            } else it
+        }
         .padding(horizontal = Spacing.lg, vertical = 11.dp)
     Row(
         modifier = baseModifier.alpha(if (enabled) 1f else 0.5f),

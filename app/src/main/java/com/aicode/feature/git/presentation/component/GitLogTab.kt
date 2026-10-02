@@ -2,6 +2,7 @@ package com.aicode.feature.git.presentation.component
 
 import android.content.ClipData
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -87,6 +88,7 @@ import com.aicode.core.ui.AppTextField
 import com.aicode.core.ui.dialogTextFieldColors
 import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun LogTab(
     graph: GitGraph,
@@ -191,7 +193,8 @@ internal fun LogTab(
                 Surface(
                     color = cardColor,
                     shape = shape,
-                    modifier = Modifier.fillMaxWidth()
+                    // animateItem：提交增删/搜索结果变化时旧条目平滑让位，而不是整列瞬时跳变。
+                    modifier = Modifier.fillMaxWidth().animateItem()
                 ) {
                     val origIndex = allCommits.indexOfFirst { it.hash == c.hash }
                     GraphCommitRow(

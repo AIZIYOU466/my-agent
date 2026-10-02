@@ -1,5 +1,15 @@
 package com.aicode.feature.agent.presentation.component
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -24,11 +34,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -36,6 +50,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.aicode.R
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import com.aicode.core.theme.Radius
 import com.aicode.core.theme.Spacing
 import com.aicode.core.theme.semanticColors
@@ -168,29 +184,33 @@ private fun WorkbenchIconButton(
     active: Boolean,
     onClick: () -> Unit
 ) {
+    // 背景与图标色随 active 弹簧过渡，避免硬切；参数与底部 Tab 栏一致。
+    val bg by animateColorAsState(
+        targetValue = if (active) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "workbench-btn-bg"
+    )
+    val fg by animateColorAsState(
+        targetValue = if (active) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        label = "workbench-btn-fg"
+    )
     IconButton(onClick = onClick) {
         Box(
             modifier = Modifier
                 .size(32.dp)
-                .then(
-                    if (active) {
-                        Modifier
-                            .clip(RoundedCornerShape(Radius.sm))
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
-                    } else {
-                        Modifier
-                    }
-                ),
+                .clip(RoundedCornerShape(Radius.sm))
+                .background(bg),
             contentAlignment = Alignment.Center
         ) {
             Icon(
                 icon,
                 contentDescription = contentDescription,
-                tint = if (active) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                }
+                tint = fg
             )
         }
     }
@@ -281,6 +301,35 @@ internal fun WelcomeState(
     // 预留：后续欢迎页建议点击功能接入，当前未使用
     onSuggestionClick: ((String) -> Unit)? = null
 ) {
+    // 入场编排：三行（品牌字 → 主标题 → 提示）各持一条弹簧进度，错开 120ms 依次启动；
+    // 弹簧过冲让位移轻微回弹，读作「落到位上」的重量感（呼应底部 Tab 的手感）。
+    val brandEnter = remember { Animatable(0f) }
+    val titleEnter = remember { Animatable(0f) }
+    val hintEnter = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        launch { brandEnter.animateTo(1f, spring(dampingRatio = 0.8f, stiffness = 300f)) }
+        delay(120)
+        launch { titleEnter.animateTo(1f, spring(dampingRatio = 0.8f, stiffness = 300f)) }
+        delay(120)
+        launch { hintEnter.animateTo(1f, spring(dampingRatio = 0.8f, stiffness = 300f)) }
+    }
+    // Idle 呼吸：三行不同周期、小幅错开，避免同步脉冲；与涟漪/打字点同类的「页面活着」感。
+    val breath = rememberInfiniteTransition(label = "welcome-breath")
+    val brandBreath by breath.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(7000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "brand-breath"
+    )
+    val titleBreath by breath.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(9000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "title-breath"
+    )
+    val hintBreath by breath.animateFloat(
+        initialValue = 0f, targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(11000, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "hint-breath"
+    )
     BoxWithConstraints(
         modifier = modifier.padding(Spacing.xl),
         contentAlignment = Alignment.Center
@@ -303,21 +352,39 @@ internal fun WelcomeState(
                             Color(0xFFFF5E5B)
                         )
                     )
-                )
+                ),
+                modifier = Modifier.graphicsLayer {
+                    val t = brandEnter.value.coerceIn(0f, 1f)
+                    alpha = t
+                    translationY = (1f - brandEnter.value) * WELCOME_RISE_PX + (brandBreath - 0.5f) * 3f
+                }
             )
             Spacer(Modifier.height(Spacing.xl))
             Text(
                 text = stringResource(R.string.chat_placeholder),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.graphicsLayer {
+                    val t = titleEnter.value.coerceIn(0f, 1f)
+                    alpha = t
+                    translationY = (1f - titleEnter.value) * WELCOME_RISE_PX + (titleBreath - 0.5f) * 2f
+                }
             )
             Spacer(Modifier.height(Spacing.sm))
             Text(
                 text = stringResource(R.string.chat_input_hint),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.semanticColors.subtleText
+                color = MaterialTheme.semanticColors.subtleText,
+                modifier = Modifier.graphicsLayer {
+                    val t = hintEnter.value.coerceIn(0f, 1f)
+                    alpha = t
+                    translationY = (1f - hintEnter.value) * WELCOME_RISE_PX + (hintBreath - 0.5f) * 2f
+                }
             )
         }
     }
 }
+
+/** 欢迎页三行的上浮位移（px）：入场起点相对静置位置。 */
+private const val WELCOME_RISE_PX = 24f
