@@ -56,7 +56,7 @@ class GeneralSettingsRepository @Inject constructor(
         const val DEFAULT_MAX_NETWORK_RETRIES = 6
 
         /** 自动压缩阈值默认 90%，与原硬编码值一致。 */
-        const val DEFAULT_COMPACTION_THRESHOLD_PERCENT = 90
+        const val DEFAULT_COMPACTION_THRESHOLD_PERCENT = 70
 
         /** sendFile 单个文件大小上限默认 100MB，与原硬编码值一致。 */
         const val DEFAULT_SENDFILE_MAX_SIZE_MB = 100

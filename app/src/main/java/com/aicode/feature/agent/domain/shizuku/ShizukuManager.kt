@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import com.aicode.core.util.FileLogger
+import com.aicode.feature.agent.domain.container.BoundedOutput
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -18,9 +19,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import rikka.shizuku.Shizuku
+import rikka.shizuku.ShizukuRemoteProcess
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -70,6 +73,9 @@ class ShizukuManager @Inject constructor(
 
         /** 命令超时上限（毫秒），与 [com.aicode.feature.agent.domain.container.CommandEngine.MAX_TIMEOUT_MS] 对齐。 */
         const val MAX_TIMEOUT_MS = 1_800_000L
+
+        /** 降级路径读取子进程 stdout/stderr 的线程 join 上限（毫秒）。 */
+        const val READER_JOIN_TIMEOUT_MS = 2_000L
 
         const val DOWNLOAD_URL = "https://shizuku.rikka.app/download/"
     }
@@ -152,9 +158,22 @@ class ShizukuManager @Inject constructor(
         refreshState()
     }
 
-    /** 重新计算并发布当前状态。 */
+    /** 重新计算并发布当前状态；变化时打一行日志便于定位。 */
     fun refreshState() {
-        _state.value = computeState()
+        val newState = computeState()
+        if (newState != _state.value) {
+            FileLogger.d(TAG, "状态变化: ${_state.value} → $newState")
+            when (newState) {
+                ShizukuState.NOT_INSTALLED ->
+                    FileLogger.w(TAG, "Shizuku 包未安装（$SHIZUKU_PACKAGE）")
+                ShizukuState.NOT_RUNNING ->
+                    FileLogger.w(TAG, "pingBinder=${runCatching { Shizuku.pingBinder() }.getOrDefault(false)}")
+                ShizukuState.PERMISSION_DENIED ->
+                    FileLogger.w(TAG, "checkSelfPermission=${runCatching { Shizuku.checkSelfPermission() }.getOrNull()}")
+                ShizukuState.READY -> Unit
+            }
+        }
+        _state.value = newState
     }
 
     private fun computeState(): ShizukuState {
@@ -214,6 +233,8 @@ class ShizukuManager @Inject constructor(
         shellService?.let { return it }
         return bindMutex.withLock {
             shellService?.let { return@withLock it }
+            val started = System.currentTimeMillis()
+            FileLogger.d(TAG, "begin bindUserService: version=$appVersionCode tag=$SERVICE_TAG")
             if (computeState() != ShizukuState.READY) {
                 throw IllegalStateException("Shizuku 未就绪（${_state.value}）")
             }
@@ -222,8 +243,10 @@ class ShizukuManager @Inject constructor(
             withContext(Dispatchers.Main) {
                 Shizuku.bindUserService(userServiceArgs, serviceConnection)
             }
-            withTimeoutOrNull(BIND_TIMEOUT_MS) { deferred.await() }
+            val result = withTimeoutOrNull(BIND_TIMEOUT_MS) { deferred.await() }
                 ?: throw IllegalStateException("绑定 Shizuku 服务超时")
+            FileLogger.d(TAG, "bindUserService 成功，耗时 ${System.currentTimeMillis() - started}ms")
+            result
         }
     }
 }
