@@ -4,7 +4,6 @@ import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -434,7 +433,6 @@ private fun WorkspaceSheet(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun WorkspaceRow(
     workspace: Workspace,
@@ -453,8 +451,6 @@ private fun WorkspaceRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            // animateItem：新建/删除工作区或切换时旧行平滑让位，而不是整列瞬时跳变。
-            .animateItem()
             .pressScale(interactionSource, enabled = !disabled)
             .clip(RoundedCornerShape(Radius.sm))
             .clickable(

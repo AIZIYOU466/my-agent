@@ -752,7 +752,6 @@ private fun GroupHeaderWithAction(
  * 观感与 [com.aicode.feature.settings.presentation.component.SettingsGroup] 一致，但每行是独立
  * LazyColumn item，组内上千行时也只组合可见部分。
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FileGroupRow(
     index: Int,
@@ -768,8 +767,7 @@ private fun FileGroupRow(
     Surface(
         color = MaterialTheme.semanticColors.cardSurface,
         shape = shape,
-        // animateItem：文件暂存移组/刷新时旧行平滑让位，而不是整列瞬时跳变。
-        modifier = Modifier.fillMaxWidth().animateItem()
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column {
             if (index > 0) SettingsDivider()
@@ -1180,7 +1178,6 @@ private fun StashBottomSheet(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun StashItemRow(
     stash: GitStash,
@@ -1192,8 +1189,7 @@ private fun StashItemRow(
     Surface(
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
         shape = RoundedCornerShape(Radius.md),
-        // animateItem：pop/drop 后剩余 stash 平滑让位，而不是整列瞬时跳变。
-        modifier = Modifier.fillMaxWidth().animateItem()
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column(
             modifier = Modifier.padding(Spacing.sm),
